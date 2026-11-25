@@ -20,22 +20,23 @@ Docker: `make docker`. Data is kept in `./storage`.
 
 ## API
 
-| Method | Path | What |
-|---|---|---|
-| GET | `/api/v1/profiles/{username}?posts_limit=12&reels_limit=12&refresh=false` | Full profile, posts and reels |
-| GET | `/api/v1/profiles/{username}/posts?limit=` | Posts only |
-| GET | `/api/v1/profiles/{username}/reels?limit=` | Reels only (play counts, audio) |
-| GET | `/api/v1/profiles/{username}/history` | Follower history from stored snapshots |
-| GET | `/api/v1/profiles` | Stored profiles (paginated) |
-| DELETE | `/api/v1/profiles/{username}` | Delete stored data and media |
-| POST | `/api/v1/jobs` | Batch scrape `{"usernames": [...]}` in the background |
-| GET | `/api/v1/jobs/{id}` | Job progress and results |
-| GET | `/health`, `/health/ready` | Probes |
-| GET | `/media/{username}/...` | Locally saved images |
+There is **one data endpoint**, and it returns everything in a single response:
 
-`{username}` accepts `natgeo`, `@natgeo` or a profile URL (the URL form works in batch jobs).
-Responses report `source: "live" | "cache"` and include `warnings` (for example "only 12 posts
-available logged-out").
+```
+GET /api/v1/profiles/{username}?posts_limit=12&reels_limit=12&refresh=false
+```
+
+| Field | Contents |
+|---|---|
+| `profile` | bio, full name, profile picture (`profile_pic_url_hd` and local `profile_pic_local`), followers, following, posts count, bio links, verified/business/private flags, category, contact info |
+| `posts` | grid posts: caption, hashtags, mentions, likes, comments, views, date, location, images/videos, carousel items |
+| `reels` | reels: plays, views, likes, comments, duration, audio, video URL |
+| `history` | follower/following/posts snapshots from earlier scrapes (oldest first) |
+| `source` | `live` (just scraped) or `cache` (served from the database) |
+| `warnings` | partial-data notes, e.g. "only 12 posts available logged-out" |
+
+`{username}` accepts `natgeo` or `@natgeo`. Set `posts_limit=0` or `reels_limit=0` to skip
+a section. Other routes: `/health`, `/health/ready`, and `/media/{username}/...` for saved images.
 
 ```bash
 curl localhost:8000/api/v1/profiles/natgeo | jq '.profile | {username, followers, biography}'

@@ -7,7 +7,7 @@ Pattern: a few queryable columns + the full parsed model in `data` (JSON)
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.core.utils import utcnow
@@ -75,17 +75,3 @@ class MediaRow(Base):
     raw: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
-
-
-class JobRow(Base):
-    __tablename__ = "scrape_jobs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    status: Mapped[str] = mapped_column(String(16), index=True)
-    request: Mapped[dict[str, Any]] = mapped_column(JSON)
-    results: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    total: Mapped[int] = mapped_column(Integer, default=0)
-    done: Mapped[int] = mapped_column(Integer, default=0)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
-    finished_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)

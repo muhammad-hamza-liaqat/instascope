@@ -20,7 +20,6 @@ from app.core.errors import register_exception_handlers
 from app.core.utils import setup_logging
 from app.db.session import create_engine, init_db
 from app.scraper.client import InstagramClient
-from app.services.job_service import JobService
 from app.services.media_store import MEDIA_URL_PREFIX, MediaStore
 from app.services.profile_service import ProfileService
 
@@ -39,12 +38,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         client = InstagramClient(settings)
         profiles = ProfileService(client, sessions, MediaStore(client, settings), settings)
-        jobs = JobService(profiles, sessions, settings)
-        await jobs.mark_interrupted()
 
         app.state.engine = engine
         app.state.profile_service = profiles
-        app.state.job_service = jobs
         log.info(
             "%s %s ready (sessions=%d, proxies=%d, auth=%s)",
             settings.app_name,

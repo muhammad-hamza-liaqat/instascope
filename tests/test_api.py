@@ -7,6 +7,26 @@ from app.scraper import endpoints as ep
 from tests.conftest import load, mock_clips, mock_profile
 
 
+def test_single_data_endpoint(client):
+    paths = set(client.get("/openapi.json").json()["paths"])
+    assert paths == {"/api/v1/profiles/{username}", "/health", "/health/ready"}
+
+
+def test_limits_zero_skip_sections_and_cache_tracks_them(client, ig):
+    profile_route = mock_profile(ig)
+    clips = mock_clips(ig)
+    only_profile = client.get(
+        "/api/v1/profiles/natgeo", params={"posts_limit": 0, "reels_limit": 0}
+    ).json()
+    assert only_profile["posts"] == [] and only_profile["reels"] == []
+    assert clips.call_count == 0
+
+    # Reels were never scraped, so asking for them must go live rather than serve an empty cache.
+    full = client.get("/api/v1/profiles/natgeo").json()
+    assert full["source"] == "live" and len(full["reels"]) == 2
+    assert profile_route.call_count == 2
+
+
 def test_health(client):
     assert client.get("/health").json()["status"] == "ok"
     ready = client.get("/health/ready").json()
@@ -38,19 +58,10 @@ def test_profile_live_then_cache_then_refresh(client, ig):
     assert third["source"] == "live"
     assert profile_route.call_count == 2
 
-    history = client.get("/api/v1/profiles/natgeo/history").json()
-    assert len(history["points"]) == 2
-
-
-def test_reels_endpoint_needs_its_own_freshness(client, ig):
-    mock_profile(ig)
-    clips = mock_clips(ig)
-    posts = client.get("/api/v1/profiles/natgeo/posts", params={"limit": 2}).json()
-    assert posts["count"] == 2 and clips.call_count == 0
-
-    reels = client.get("/api/v1/profiles/natgeo/reels").json()
-    assert reels["source"] == "live"  # reels were never scraped, so cache is not used
-    assert reels["count"] == 2
+    assert len(body["history"]) == 1
+    assert len(second["history"]) == 1  # cache hits don't add snapshots
+    assert len(third["history"]) == 2
+    assert third["history"][0]["followers"] == 283_000_000
 
 
 def test_not_found_json_404(client, ig):
@@ -149,36 +160,6 @@ def test_api_key_required_when_configured(app_factory, ig):
     assert client.get("/api/v1/profiles/natgeo").status_code == 401
     ok = client.get("/api/v1/profiles/natgeo", headers={"X-API-Key": "secret"})
     assert ok.status_code == 200
-
-
-def test_batch_job(client, ig):
-    mock_profile(ig)
-    mock_clips(ig)
-    mock_profile(ig, "ghost", payload={"data": {"user": None}})
-
-    created = client.post("/api/v1/jobs", json={"usernames": ["natgeo", "@NatGeo", "ghost"]})
-    assert created.status_code == 202
-    job = created.json()
-    assert job["total"] == 2  # deduplicated
-
-    final = client.get(f"/api/v1/jobs/{job['id']}").json()
-    assert final["status"] == "partial"
-    by_user = {r["username"]: r for r in final["results"]}
-    assert by_user["natgeo"]["status"] == "ok"
-    assert by_user["ghost"]["status"] == "error"
-    assert client.get("/api/v1/jobs/nope").status_code == 404
-
-
-def test_list_and_delete(client, ig):
-    mock_profile(ig)
-    mock_clips(ig)
-    client.get("/api/v1/profiles/natgeo")
-    listing = client.get("/api/v1/profiles").json()
-    assert listing["total"] == 1 and listing["items"][0]["username"] == "natgeo"
-
-    assert client.delete("/api/v1/profiles/natgeo").status_code == 204
-    assert client.get("/api/v1/profiles").json()["total"] == 0
-    assert client.get("/api/v1/profiles/natgeo/history").status_code == 404
 
 
 def test_media_download_and_serving(app_factory, ig, tmp_path: Path):

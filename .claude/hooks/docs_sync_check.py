@@ -11,7 +11,13 @@ import os
 import sys
 from pathlib import Path
 
-CODE_GLOBS = ("app/**/*.py", "tests/**/*.py", "tests/fixtures/*.json", "pyproject.toml", ".env.example")
+CODE_GLOBS = (
+    "app/**/*.py",
+    "tests/**/*.py",
+    "tests/fixtures/*.json",
+    "pyproject.toml",
+    ".env.example",
+)
 DOC_GLOBS = ("CLAUDE.md", ".claude/skills/*/SKILL.md", "README.md")
 
 

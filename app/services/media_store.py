@@ -57,10 +57,3 @@ class MediaStore:
         failed = sum(1 for path in saved if path is None)
         if failed:
             warnings.append(f"{failed} thumbnail(s) could not be downloaded.")
-
-    async def delete_user_dir(self, username: str) -> None:
-        import shutil
-
-        target = self.root / username
-        if target.is_dir():
-            await asyncio.to_thread(shutil.rmtree, target, True)

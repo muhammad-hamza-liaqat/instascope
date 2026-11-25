@@ -4,10 +4,10 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import JobRow, MediaRow, ProfileRow, SnapshotRow
+from app.db.models import MediaRow, ProfileRow, SnapshotRow
 from app.schemas.instagram import MediaData, ProfileData
 
 
@@ -70,21 +70,6 @@ class Repository:
         await self.s.flush()
         return row
 
-    async def list_profiles(self, offset: int, limit: int) -> tuple[Sequence[ProfileRow], int]:
-        total = await self.s.scalar(select(func.count()).select_from(ProfileRow)) or 0
-        rows = await self.s.scalars(
-            select(ProfileRow)
-            .order_by(ProfileRow.last_scraped_at.desc())
-            .offset(offset)
-            .limit(limit)
-        )
-        return rows.all(), total
-
-    async def delete_profile(self, profile_id: str) -> None:
-        await self.s.execute(delete(MediaRow).where(MediaRow.profile_id == profile_id))
-        await self.s.execute(delete(SnapshotRow).where(SnapshotRow.profile_id == profile_id))
-        await self.s.execute(delete(ProfileRow).where(ProfileRow.id == profile_id))
-
     async def history(self, profile_id: str, limit: int) -> Sequence[SnapshotRow]:
         rows = await self.s.scalars(
             select(SnapshotRow)
@@ -135,16 +120,3 @@ class Repository:
         query = query.order_by(MediaRow.taken_at.desc().nulls_last()).limit(limit)
         rows = await self.s.scalars(query)
         return [MediaData.model_validate(r.data) for r in rows.all()]
-
-    # ------------------------------------------------------------------- jobs
-    async def add_job(self, job: JobRow) -> JobRow:
-        self.s.add(job)
-        await self.s.flush()
-        return job
-
-    async def get_job(self, job_id: str) -> JobRow | None:
-        return await self.s.get(JobRow, job_id)
-
-    async def jobs_with_status(self, *statuses: str) -> Sequence[JobRow]:
-        rows = await self.s.scalars(select(JobRow).where(JobRow.status.in_(statuses)))
-        return rows.all()

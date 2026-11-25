@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     max_concurrency: int = 4
     min_request_interval: float = 1.5  # seconds between Instagram calls (politeness/anti-ban)
     max_pages: int = 20  # pagination cap per request
-    job_concurrency: int = 2
 
     @field_validator("api_keys", "cors_origins", "ig_session_ids", "proxies", mode="before")
     @classmethod

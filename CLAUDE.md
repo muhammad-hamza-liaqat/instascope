@@ -1,8 +1,13 @@
 # InstaScope — Claude guide
 
 Our own Instagram profile scraper (we don't wrap Apify): FastAPI + async httpx + SQLAlchemy 2.0.
-Input is a handle; output is bio, profile picture, counts, bio links, business info, posts and
-reels. Every live scrape is persisted.
+Input is a handle; output is bio, profile picture, counts, bio links, business info, posts, reels
+and follower history. Every live scrape is persisted.
+
+**Single-endpoint rule (user decision, 2026-11-25):** all data comes from ONE route,
+`GET /api/v1/profiles/{username}`, which returns everything in one `ScrapeResult`. Don't add
+separate posts/reels/history/list/jobs endpoints; add fields or query params to this one instead.
+(The removed routes are in git history at commit `68f8cec` if ever needed.)
 
 ## Commands
 - `make dev`: run the API on :8000 (`/docs` for Swagger)
@@ -11,7 +16,7 @@ reels. Every live scrape is persisted.
 - Tests are offline: `respx` mocks all Instagram/CDN traffic. Never hit real Instagram in tests.
 
 ## Architecture (request flow)
-`api/v1/profiles.py` → `services/profile_service.py` (cache → live scrape → media → persist)
+`api/v1/profiles.py` (the one route) → `services/profile_service.py` (cache → live scrape → media → persist → attach history)
 → `scraper/client.py` (HTTP, retries, rotation) → `scraper/parsers.py` (raw JSON → models)
 → `db/repository.py` (all DB I/O) → `db/models.py`.
 
@@ -25,9 +30,8 @@ reels. Every live scrape is persisted.
 | `app/scraper/parsers.py` | Two media shapes: GraphQL `node` (`parse_graph_post`) and v1 `media` (`parse_v1_media`) |
 | `app/services/profile_service.py` | Orchestration, cache freshness per section, pagination, fallbacks, warnings |
 | `app/services/media_store.py` | Saves `profile.jpg` and `{shortcode}.jpg` to `storage/media/{username}/`, served at `/media` |
-| `app/services/job_service.py` | Batch jobs (DB-persisted, BackgroundTasks, marked `interrupted` on restart) |
-| `app/db/models.py` | `profiles`, `profile_snapshots` (history), `media`, `scrape_jobs` |
-| `app/schemas/` | Public response models (`ScrapeResult`, `MediaData`, `JobRead`, …) |
+| `app/db/models.py` | `profiles`, `profile_snapshots` (history), `media` (an old dev DB may still have an unused `scrape_jobs` table) |
+| `app/schemas/instagram.py` | Public response models (`ScrapeResult` with `profile`/`posts`/`reels`/`history`/`warnings`, `MediaData`, …) |
 | `tests/fixtures/*.json` | Sample Instagram payloads; keep them matching real response formats |
 
 ## Instagram strategy
@@ -59,5 +63,5 @@ you once whenever code is newer than these docs.
 ## Skills
 - `run-api`: start the server and smoke-test it
 - `update-ig-endpoints`: fix the scraper when Instagram changes its API or response formats
-- `add-endpoint`: add a route the house way (schema → service → route → test → docs)
+- `add-endpoint`: add a field or parameter to the single endpoint (schema → service → route → test → docs)
 - `sync-docs`: the after-change documentation checklist

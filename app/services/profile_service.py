@@ -8,16 +8,13 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.core.errors import ProfileNotFound, ScraperError
+from app.core.errors import ScraperError
 from app.core.utils import as_utc, normalize_username, utcnow
 from app.db.repository import Repository
 from app.schemas.instagram import (
     HistoryPoint,
-    HistoryResponse,
     MediaData,
     ProfileData,
-    ProfilePage,
-    ProfileSummary,
     ScrapeResult,
 )
 from app.scraper.client import InstagramClient
@@ -32,6 +29,8 @@ from app.scraper.parsers import (
 from app.services.media_store import MediaStore
 
 log = logging.getLogger(__name__)
+
+HISTORY_LIMIT = 500  # most recent snapshots returned with each profile
 
 PageFetcher = Callable[[str | None], Awaitable[dict[str, Any]]]
 PageParser = Callable[[dict[str, Any]], tuple[list[MediaData], str | None, bool]]
@@ -67,66 +66,28 @@ class ProfileService:
         posts_limit: int = 12,
         reels_limit: int = 12,
     ) -> ScrapeResult:
+        """Everything about a profile in one result: fields, posts, reels and history."""
         username = normalize_username(username)
+        result = None
         if not refresh:
-            cached = await self._from_cache(username, posts_limit, reels_limit)
-            if cached is not None:
-                return cached
-        return await self._scrape_live(username, posts_limit, reels_limit)
+            result = await self._from_cache(username, posts_limit, reels_limit)
+        if result is None:
+            result = await self._scrape_live(username, posts_limit, reels_limit)
+        result.history = await self._history(result.profile.id)
+        return result
 
-    async def history(self, username: str, limit: int = 500) -> HistoryResponse:
-        username = normalize_username(username)
+    async def _history(self, profile_id: str) -> list[HistoryPoint]:
         async with self._sessions() as session:
-            repo = Repository(session)
-            row = await repo.get_profile(username)
-            if row is None:
-                raise ProfileNotFound(f"@{username} has not been scraped yet")
-            points = await repo.history(row.id, limit)
-        return HistoryResponse(
-            username=username,
-            points=[
-                HistoryPoint(
-                    followers=p.followers,
-                    following=p.following,
-                    posts_count=p.posts_count,
-                    scraped_at=as_utc(p.scraped_at),
-                )
-                for p in points
-            ],
-        )
-
-    async def list_profiles(self, offset: int, limit: int) -> ProfilePage:
-        async with self._sessions() as session:
-            rows, total = await Repository(session).list_profiles(offset, limit)
-        return ProfilePage(
-            total=total,
-            offset=offset,
-            limit=limit,
-            items=[
-                ProfileSummary(
-                    id=r.id,
-                    username=r.username,
-                    full_name=r.full_name,
-                    followers=r.followers,
-                    following=r.following,
-                    posts_count=r.posts_count,
-                    is_verified=r.is_verified,
-                    is_private=r.is_private,
-                    last_scraped_at=as_utc(r.last_scraped_at),
-                )
-                for r in rows
-            ],
-        )
-
-    async def delete_profile(self, username: str) -> None:
-        username = normalize_username(username)
-        async with self._sessions() as session, session.begin():
-            repo = Repository(session)
-            row = await repo.get_profile(username)
-            if row is None:
-                raise ProfileNotFound(f"@{username} is not stored")
-            await repo.delete_profile(row.id)
-        await self._media.delete_user_dir(username)
+            points = await Repository(session).history(profile_id, HISTORY_LIMIT)
+        return [
+            HistoryPoint(
+                followers=p.followers,
+                following=p.following,
+                posts_count=p.posts_count,
+                scraped_at=as_utc(p.scraped_at),
+            )
+            for p in points
+        ]
 
     # ------------------------------------------------------------------ cache
     def _fresh(self, stamp: datetime | None) -> bool:

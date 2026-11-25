@@ -99,28 +99,6 @@ class MediaData(BaseModel):
 Source = Literal["live", "cache"]
 
 
-class ScrapeResult(BaseModel):
-    profile: ProfileData
-    posts: list[MediaData] = []
-    reels: list[MediaData] = []
-    source: Source
-    scraped_at: datetime
-    warnings: list[str] = []
-
-
-class MediaList(BaseModel):
-    username: str
-    source: Source
-    scraped_at: datetime
-    items: list[MediaData]
-    warnings: list[str] = []
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def count(self) -> int:
-        return len(self.items)
-
-
 class HistoryPoint(BaseModel):
     followers: int
     following: int
@@ -128,25 +106,13 @@ class HistoryPoint(BaseModel):
     scraped_at: datetime
 
 
-class HistoryResponse(BaseModel):
-    username: str
-    points: list[HistoryPoint]
-
-
-class ProfileSummary(BaseModel):
-    id: str
-    username: str
-    full_name: str | None
-    followers: int
-    following: int
-    posts_count: int
-    is_verified: bool
-    is_private: bool
-    last_scraped_at: datetime
-
-
-class ProfilePage(BaseModel):
-    total: int
-    offset: int
-    limit: int
-    items: list[ProfileSummary]
+class ScrapeResult(BaseModel):
+    profile: ProfileData
+    posts: list[MediaData] = []
+    reels: list[MediaData] = []
+    source: Source
+    scraped_at: datetime
+    history: list[HistoryPoint] = Field(
+        default=[], description="Stored follower/following/posts snapshots, oldest first"
+    )
+    warnings: list[str] = []
