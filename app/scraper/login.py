@@ -8,8 +8,10 @@ Unverified against live Instagram as of 2026-11-25 (see CLAUDE.md).
 """
 
 import base64
+import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -68,6 +70,78 @@ def _cookie(jar: httpx.Cookies, name: str) -> str | None:
         return next((c.value for c in jar.jar if c.name == name), None)
 
 
+_CSRF_HTML = re.compile(r'"csrf_token"\s*:\s*"([^"]+)"')
+_ENCRYPTION_HTML = re.compile(r'"encryption"\s*:\s*(\{[^{}]*\})')
+
+
+def _key_from(resp: httpx.Response, data: dict[str, Any]) -> tuple[str | None, str | None, str]:
+    enc = data.get("encryption") or {}
+    if not enc and "html" in resp.headers.get("content-type", ""):
+        match = _ENCRYPTION_HTML.search(resp.text)
+        if match:
+            try:
+                enc = json.loads(match.group(1))
+            except ValueError:
+                enc = {}
+    key_id = enc.get("key_id") or resp.headers.get("ig-set-password-encryption-web-key-id")
+    pub_key = enc.get("public_key") or resp.headers.get("ig-set-password-encryption-web-pub-key")
+    version = enc.get("version") or resp.headers.get("ig-set-password-encryption-web-key-version")
+    return (
+        str(key_id) if key_id else None,
+        str(pub_key) if pub_key else None,
+        str(version or "10"),
+    )
+
+
+async def _bootstrap(
+    http: httpx.AsyncClient, headers: dict[str, str]
+) -> tuple[str, str | None, str | None, str] | LoginResult:
+    """Return (csrf, key_id, public_key, version), or a LoginResult describing the failure."""
+    sources = [
+        (ep.SHARED_DATA, headers),
+        (ep.LOGIN_PAGE, {**headers, "Accept": "text/html,application/xhtml+xml"}),
+    ]
+    csrf: str | None = None
+    key_id: str | None = None
+    pub_key: str | None = None
+    version = "10"
+    errors: list[str] = []
+    for url, req_headers in sources:
+        try:
+            resp = await http.get(url, headers=req_headers)
+        except httpx.HTTPError as exc:
+            errors.append(f"{url}: {exc!r}")
+            continue
+        if resp.status_code == 429:
+            return LoginResult(LoginStatus.RATE_LIMITED, message="rate limited during bootstrap")
+        data: dict[str, Any] = {}
+        if "json" in resp.headers.get("content-type", ""):
+            try:
+                parsed = resp.json()
+                data = parsed if isinstance(parsed, dict) else {}
+            except ValueError:
+                pass
+        csrf = (
+            csrf
+            or (data.get("config") or {}).get("csrf_token")
+            or _cookie(http.cookies, "csrftoken")
+        )
+        if not csrf and "html" in resp.headers.get("content-type", ""):
+            match = _CSRF_HTML.search(resp.text)
+            csrf = match.group(1) if match else None
+        found = _key_from(resp, data)
+        if found[0] and found[1]:
+            key_id, pub_key, version = found
+        if csrf and key_id and pub_key:
+            break
+        errors.append(f"{url}: HTTP {resp.status_code}")
+    if not csrf:
+        return LoginResult(
+            LoginStatus.ERROR, message="could not obtain csrftoken (" + "; ".join(errors) + ")"
+        )
+    return csrf, key_id, pub_key, version
+
+
 async def web_login(
     http: httpx.AsyncClient, username: str, password: str, settings: Settings
 ) -> LoginResult:
@@ -83,31 +157,14 @@ async def web_login(
         "Referer": ep.LOGIN_PAGE,
     }
 
-    # 1. Bootstrap: csrftoken cookie + encryption key (JSON body or response headers).
-    try:
-        boot = await http.get(ep.SHARED_DATA, headers=headers)
-    except httpx.HTTPError as exc:
-        return LoginResult(LoginStatus.ERROR, message=f"bootstrap failed: {exc!r}")
-    if boot.status_code == 429:
-        return LoginResult(LoginStatus.RATE_LIMITED, message="rate limited during bootstrap")
-    data: dict[str, Any] = {}
-    try:
-        parsed = boot.json()
-        data = parsed if isinstance(parsed, dict) else {}
-    except ValueError:
-        pass
-
-    csrf = (data.get("config") or {}).get("csrf_token") or _cookie(http.cookies, "csrftoken")
-    if not csrf:
-        return LoginResult(LoginStatus.ERROR, message="could not obtain csrftoken")
+    # 1. Bootstrap: csrftoken + password-encryption key. Try the JSON endpoint first, then the
+    #    login page (cookie, response headers, or values embedded in the HTML).
+    boot = await _bootstrap(http, headers)
+    if isinstance(boot, LoginResult):
+        return boot
+    csrf, key_id, pub_key, version = boot
     http.cookies.set("csrftoken", csrf, domain=".instagram.com")
 
-    enc = data.get("encryption") or {}
-    key_id = enc.get("key_id") or boot.headers.get("ig-set-password-encryption-web-key-id")
-    pub_key = enc.get("public_key") or boot.headers.get("ig-set-password-encryption-web-pub-key")
-    version = str(
-        enc.get("version") or boot.headers.get("ig-set-password-encryption-web-key-version") or "10"
-    )
     if key_id and pub_key:
         enc_password = encrypt_password(
             password, key_id=int(key_id), public_key_hex=pub_key, version=version

@@ -222,6 +222,8 @@ class AccountPool:
                     if acc is None:
                         row = rows.get(username)
                         acc = self._from_row(row) if row else Account(username=username)
+                        if acc.status in (AccountStatus.NEEDS_LOGIN, AccountStatus.CHECKPOINT):
+                            acc.next_login_at = None  # restart = "I fixed it": try logging in now
                         self._accounts[username] = acc
                     self._reconcile(acc, password, seed_session)
                     self._write(session, acc, rows.get(username))

@@ -173,6 +173,42 @@ def test_auto_login_unlocks_pagination_and_encrypts_session(app_factory, ig, tmp
     assert session_enc and "sess1" not in session_enc
 
 
+def test_login_bootstraps_from_login_page_when_shared_data_is_gone(app_factory, ig):
+    client = app_factory(ig_accounts=["scraper1:pw"])
+    ig.get(ep.SHARED_DATA).respond(404, html="<html><title>Page Not Found</title></html>")
+    pub = IG_KEY.public_key.encode().hex()
+    ig.get(ep.LOGIN_PAGE).respond(
+        200,
+        html=f'<html><script>{{"encryption":{{"key_id":"77","public_key":"{pub}","version":"10"}}}}</script></html>',
+        headers={"set-cookie": "csrftoken=pagetoken; Domain=.instagram.com; Path=/"},
+    )
+    login = ig.post(ep.LOGIN_AJAX).mock(return_value=login_ok())
+    mock_profile(ig)
+    mock_clips(ig)
+    mock_feed(ig)
+
+    body = client.get("/api/v1/profiles/natgeo", params={"posts_limit": 50}).json()
+    assert len(body["posts"]) == 4
+    request = login.calls.last.request
+    assert request.headers["x-csrftoken"] == "pagetoken"
+    assert "PWD_INSTAGRAM_BROWSER%3A10%3A" in request.content.decode()  # encrypted with key 77
+
+
+def test_login_reports_why_bootstrap_failed(app_factory, ig):
+    client = app_factory(ig_accounts=["scraper1:pw"])
+    ig.get(ep.SHARED_DATA).respond(404, html="<html></html>")
+    ig.get(ep.LOGIN_PAGE).respond(403, html="<html></html>")
+    mock_profile(ig)
+    mock_clips(ig)
+    client.get("/api/v1/profiles/natgeo", params={"posts_limit": 50})
+    account = client.get("/health/ready").json()["accounts"]["accounts"][0]
+    assert account["status"] == "needs_login"
+    assert (
+        "could not obtain csrftoken" in account["last_error"]
+        and "HTTP 403" in account["last_error"]
+    )
+
+
 def test_checkpoint_is_flagged_alerted_and_scrape_still_returns(app_factory, ig):
     client = app_factory(ig_accounts=["scraper1:pw"], alert_webhook_url=HOOK)
     hook = ig.post(HOOK).respond(200)
