@@ -43,7 +43,8 @@ separate posts/reels/history/list/jobs endpoints; add fields or query params to 
 
 ## Instagram strategy
 - **Current primary (verified in the browser 2026-11-25):** the old JSON API is dead (HTML 404 logged in AND out). `ProfileService._scrape_live` tries it once, then switches to `_scrape_web` for 6h. Web flow, holding ONE account (`client.borrow_account()`): GET `/{username}/` (tokens + profile id) → POST `/api/graphql` `PolarisProfilePageContentQuery` (id) → `PolarisProfilePostsTabContentQuery_connection` (username + `after` cursor) → `PolarisProfileReelsTabContentQuery` (user id). Posts/reels nodes are v1 media (`parse_v1_media`); the profile is a v1 user (`parse_profile_v1`). doc_ids live in settings `IG_DOC_PROFILE/POSTS/REELS`; when Instagram changes them, capture new ones from the browser (Network → `/api/graphql` → `fb_api_req_friendly_name` + `doc_id`).
-- Not yet verified live: whether the minimal form fields are enough, reels pagination args (`after`/`first` are a guess), `media_count` presence.
+- **VERIFIED LIVE 2026-11-25:** natgeo (267M followers, 32,209 posts) and a small profile scraped end to end with profile, posts, reels and saved images. It needed: the `for (;;);` prefix stripped, FB-style `error` handling, the real csrftoken from the page cookie, and the page params (`__hs`, `__rev`, `__hsi`, `__spin_*`). Without them: error 1357054.
+- Still unverified: reels pagination beyond the first page (`after`/`first` are a guess).
 - Profile: `GET /api/v1/users/web_profile_info/?username=` with `X-IG-App-ID`. Logged-out OK, returns the first 12 grid posts.
 - More posts: `GET /api/v1/feed/user/{id}/` needs a pool account (`auth=True`).
 - Reels: `POST /api/v1/clips/user/`; on failure, fall back to reels in the grid and add a warning.
