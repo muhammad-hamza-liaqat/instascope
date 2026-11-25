@@ -2,7 +2,7 @@
 
 | You see | Meaning | Fix |
 |---|---|---|
-| `"error": "blocked"` | Instagram blocked your IP | add a spare account and/or a proxy |
+| `"error": "blocked"` | Instagram refused the request | run `make diagnose`, then add a spare account and/or a proxy |
 | account status `checkpoint` | Instagram wants to confirm the login | open Instagram on that account and tap **"This was me"** |
 | account status `bad_credentials` | wrong password | fix it in `accounts.txt` |
 | warning "Only the first 12 posts…" | no logged-in account | add a spare account |

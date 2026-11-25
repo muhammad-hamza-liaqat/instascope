@@ -92,9 +92,32 @@ class Settings(BaseSettings):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
+    @field_validator("proxies", mode="after")
+    @classmethod
+    def _normalize_proxies(cls, value: list[str]) -> list[str]:
+        return [normalize_proxy(p) for p in value]
+
     @property
     def media_dir(self) -> Path:
         return self.storage_dir / "media"
+
+
+def normalize_proxy(raw: str) -> str:
+    """Accept provider formats and return a proxy URL.
+
+    `ip:port:user:pass` -> `http://user:pass@ip:port`, `ip:port` -> `http://ip:port`.
+    Values that already contain `://` are kept as they are.
+    """
+    raw = raw.strip()
+    if "://" in raw:
+        return raw
+    parts = raw.split(":")
+    if len(parts) == 4:
+        host, port, user, password = parts
+        return f"http://{user}:{password}@{host}:{port}"
+    if len(parts) == 2:
+        return f"http://{raw}"
+    raise ValueError("Proxy must look like ip:port, ip:port:user:pass or http://user:pass@ip:port")
 
 
 @lru_cache

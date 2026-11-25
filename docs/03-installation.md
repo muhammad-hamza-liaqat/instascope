@@ -26,6 +26,13 @@ cp .env.example .env
 
 ### Add a proxy (optional)
 
+**If you have a list of proxies** (like `ip:port:user:pass`), paste them comma-separated:
+```
+PROXIES=1.2.3.4:8000:user:pass,5.6.7.8:8000:user:pass
+```
+
+**If you have one rotating link**, use this instead:
+
 In `.env`, set the link your proxy company gives you:
 ```
 PROXY_URL=http://USERNAME:PASSWORD@gate.provider.com:7000

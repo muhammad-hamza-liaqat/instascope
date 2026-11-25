@@ -1,4 +1,4 @@
-.PHONY: install dev test lint fmt typecheck check docker memory-sync
+.PHONY: install dev test lint fmt typecheck check docker memory-sync diagnose
 
 install:
 	uv sync
@@ -28,3 +28,8 @@ docker:
 CLAUDE_MEMORY := $(HOME)/.claude/projects/-Users-muhammad-hamza-Desktop-untitled-folder/memory
 memory-sync:
 	mkdir -p .claude/memory && cp "$(CLAUDE_MEMORY)"/*.md .claude/memory/ && ls .claude/memory
+
+# Check which Instagram request styles work from this machine/proxy (prints status codes only).
+HANDLE ?= natgeo
+diagnose:
+	uv run python scripts/diagnose_instagram.py $(HANDLE)

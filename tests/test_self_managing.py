@@ -117,6 +117,15 @@ def test_proxy_router_gateway_and_sticky(tmp_path):
     assert "{session}" not in alpha and not router.rotates(alpha)
 
 
+def test_proxy_provider_formats_are_normalized(tmp_path):
+    settings = make_settings(tmp_path, proxies="1.2.3.4:8000:user:pass,5.6.7.8:9000,http://u:p@h:1")
+    assert settings.proxies == [
+        "http://user:pass@1.2.3.4:8000",
+        "http://5.6.7.8:9000",
+        "http://u:p@h:1",
+    ]
+
+
 def test_proxy_list_rests_failing_proxy(tmp_path):
     router = ProxyRouter(make_settings(tmp_path, proxies=["http://p1", "http://p2"]))
     assert {router.anonymous(), router.anonymous()} == {"http://p1", "http://p2"}
