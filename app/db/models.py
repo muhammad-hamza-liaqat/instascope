@@ -7,7 +7,7 @@ Pattern: a few queryable columns + the full parsed model in `data` (JSON)
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.core.utils import utcnow
@@ -74,4 +74,27 @@ class MediaRow(Base):
     data: Mapped[dict[str, Any]] = mapped_column(JSON)
     raw: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+
+
+class AccountRow(Base):
+    """Instagram accounts in the self-managed pool. Passwords are NOT stored (config only)."""
+
+    __tablename__ = "ig_accounts"
+
+    username: Mapped[str] = mapped_column(String(80), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    session_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet-encrypted
+    user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    password_fp: Mapped[str | None] = mapped_column(String(64), nullable=True)  # keyed hash
+    strikes: Mapped[int] = mapped_column(Integer, default=0)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    total_requests: Mapped[int] = mapped_column(Integer, default=0)
+    total_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cooldown_until: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    next_login_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)

@@ -8,16 +8,20 @@ from fastapi.security import APIKeyHeader
 
 from app.services.profile_service import ProfileService
 
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def api_key_valid(request: Request, api_key: str | None) -> bool:
+    keys: list[str] = request.app.state.settings.api_keys
+    if not keys:
+        return True  # auth disabled
+    return bool(api_key) and any(secrets.compare_digest(api_key or "", k) for k in keys)
 
 
 async def require_api_key(
-    request: Request, api_key: Annotated[str | None, Security(_api_key_header)] = None
+    request: Request, api_key: Annotated[str | None, Security(api_key_header)] = None
 ) -> None:
-    keys: list[str] = request.app.state.settings.api_keys
-    if not keys:
-        return  # auth disabled
-    if not api_key or not any(secrets.compare_digest(api_key, k) for k in keys):
+    if not api_key_valid(request, api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing X-API-Key",

@@ -197,10 +197,10 @@ class ProfileService:
     ) -> list[MediaData]:
         posts = list(grid)
         if len(posts) < limit and has_more:
-            if not self._client.has_session:
+            if not self._client.can_authenticate:
                 warnings.append(
                     f"Only the first {len(posts)} posts are available logged-out. "
-                    f"Set IG_SESSION_IDS to fetch up to {limit}."
+                    f"Add Instagram accounts (IG_ACCOUNTS) to fetch up to {limit}."
                 )
             else:
                 try:

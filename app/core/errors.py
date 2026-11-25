@@ -32,14 +32,20 @@ class ProfileNotFound(ScraperError):
 
 
 class LoginRequired(ScraperError):
-    """Instagram requires a logged-in session for this data. Set IG_SESSION_IDS."""
+    """Instagram requires a logged-in session for this data. Add accounts to IG_ACCOUNTS."""
 
     status_code = 503
     code = "login_required"
 
 
+class NoAccountAvailable(LoginRequired):
+    """No healthy Instagram account is available right now."""
+
+    code = "no_account_available"
+
+
 class Blocked(ScraperError):
-    """Instagram blocked the request (checkpoint/challenge/login wall). Use proxies or sessions."""
+    """Instagram blocked the request (checkpoint/challenge/login wall). Use proxies or accounts."""
 
     status_code = 503
     code = "blocked"

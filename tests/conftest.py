@@ -28,7 +28,15 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "download_media": False,
         "api_keys": [],
         "ig_session_ids": [],
+        "ig_accounts": [],
+        "ig_accounts_file": None,
         "proxies": [],
+        "proxy_url": None,
+        "proxy_sticky_url": None,
+        "secret_key": "test-secret",
+        "maintenance_interval_seconds": 0,  # tests drive maintenance explicitly
+        "account_wait_seconds": 0.2,
+        "alert_webhook_url": None,
     }
     base.update(overrides)
     return Settings(_env_file=None, **base)  # type: ignore[call-arg]

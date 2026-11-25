@@ -34,12 +34,35 @@ class Settings(BaseSettings):
     download_thumbnails: bool = True  # also save post/reel cover images
     cache_ttl_seconds: int = 3600
 
+    secret_key: str | None = None  # encrypts stored sessions; auto-generated if empty
+
+    # --- Instagram accounts (self-managed pool) ---
+    ig_accounts: CsvList = []  # "username:password" entries; logged in automatically
+    ig_accounts_file: Path | None = None  # one "username:password" per line; hot-reloaded
+    ig_session_ids: CsvList = []  # optional session-only accounts (can't re-login)
+    always_use_session: bool = False  # False: try logged-out first, use an account when refused
+    account_max_requests_per_hour: int = 120
+    account_cooldown_seconds: int = 600  # first rest after a rate limit; doubles each time
+    account_cooldown_max_seconds: int = 21600
+    account_login_retry_seconds: int = 1800  # wait after a failed login attempt
+    account_checkpoint_retry_seconds: int = 21600  # re-try checkpointed accounts every 6h
+    account_wait_seconds: float = 10.0  # how long a request waits for a busy account
+
+    # --- proxies ---
+    proxy_url: str | None = None  # rotating residential gateway
+    proxy_sticky_url: str | None = None  # gateway template with {session}: stable IP per account
+    proxies: CsvList = []  # or a plain list, rotated and health-checked
+
+    # --- self-management ---
+    maintenance_interval_seconds: int = 60  # background loop; 0 disables it
+    alert_webhook_url: str | None = None  # Slack/Discord incoming webhook
+    alert_min_healthy_accounts: int = 1
+    alert_failure_ratio: float = 0.5  # alert when this share of recent Instagram calls fails
+    alert_repeat_seconds: int = 3600
+
     # --- scraper ---
     ig_app_id: str = "936619743392459"
     ig_asbd_id: str = "129477"
-    ig_session_ids: CsvList = []  # `sessionid` cookies of logged-in accounts, rotated
-    always_use_session: bool = False  # False: try logged-out first, escalate when refused
-    proxies: CsvList = []  # e.g. http://user:pass@host:port, rotated per request
     user_agent: str = DEFAULT_USER_AGENT
     request_timeout: float = 20.0
     max_retries: int = 3
@@ -48,7 +71,21 @@ class Settings(BaseSettings):
     min_request_interval: float = 1.5  # seconds between Instagram calls (politeness/anti-ban)
     max_pages: int = 20  # pagination cap per request
 
-    @field_validator("api_keys", "cors_origins", "ig_session_ids", "proxies", mode="before")
+    @field_validator(
+        "secret_key",
+        "ig_accounts_file",
+        "proxy_url",
+        "proxy_sticky_url",
+        "alert_webhook_url",
+        mode="before",
+    )
+    @classmethod
+    def _empty_to_none(cls, value: Any) -> Any:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator(
+        "api_keys", "cors_origins", "ig_accounts", "ig_session_ids", "proxies", mode="before"
+    )
     @classmethod
     def _split_csv(cls, value: Any) -> Any:
         if isinstance(value, str):

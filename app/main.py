@@ -1,5 +1,7 @@
 """App factory. Run: `uv run uvicorn app.main:app --reload`."""
 
+import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -15,13 +17,18 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app import __version__
 from app.api.health import router as health_router
 from app.api.v1.router import api_router
+from app.core.alerts import Alerter
 from app.core.config import Settings, get_settings
+from app.core.crypto import SecretBox
 from app.core.errors import register_exception_handlers
 from app.core.utils import setup_logging
 from app.db.session import create_engine, init_db
+from app.scraper.accounts import AccountPool
 from app.scraper.client import InstagramClient
+from app.scraper.proxies import ProxyRouter
 from app.services.media_store import MEDIA_URL_PREFIX, MediaStore
 from app.services.profile_service import ProfileService
+from app.services.supervisor import Supervisor
 
 log = logging.getLogger("app")
 
@@ -36,22 +43,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = create_engine(settings.database_url)
         await init_db(engine)
         sessions = async_sessionmaker(engine, expire_on_commit=False)
-        client = InstagramClient(settings)
+        alerts = Alerter(settings)
+        proxies = ProxyRouter(settings)
+        box = SecretBox.from_settings(settings.secret_key, settings.storage_dir)
+        pool = AccountPool(settings, sessions, box, proxies, alerts)
+        await pool.sync()
+        client = InstagramClient(settings, pool=pool, proxies=proxies)
         profiles = ProfileService(client, sessions, MediaStore(client, settings), settings)
+        supervisor = Supervisor(pool, client, alerts, settings)
+        task = (
+            asyncio.create_task(supervisor.run_forever(), name="supervisor")
+            if settings.maintenance_interval_seconds > 0
+            else None
+        )
 
         app.state.engine = engine
         app.state.profile_service = profiles
+        app.state.pool = pool
+        app.state.client = client
+        app.state.proxies = proxies
+        app.state.alerts = alerts
         log.info(
-            "%s %s ready (sessions=%d, proxies=%d, auth=%s)",
+            "%s %s ready (accounts=%d, proxy=%s, api_auth=%s)",
             settings.app_name,
             __version__,
-            len(settings.ig_session_ids),
-            len(settings.proxies),
+            pool.summary(details=False)["configured"],
+            proxies.mode,
             "on" if settings.api_keys else "off",
         )
         try:
             yield
         finally:
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            await pool.flush()
             await client.aclose()
             await engine.dispose()
 

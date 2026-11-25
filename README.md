@@ -11,7 +11,7 @@ CDN links expire).
 ## Quick start
 
 ```bash
-cp .env.example .env      # optional: add IG_SESSION_IDS / PROXIES / API_KEYS
+cp .env.example .env      # optional: add IG_ACCOUNTS / PROXY_URL / API_KEYS
 make install              # uv sync
 make dev                  # http://localhost:8000/docs
 ```
@@ -42,18 +42,36 @@ a section. Other routes: `/health`, `/health/ready`, and `/media/{username}/...`
 curl localhost:8000/api/v1/profiles/natgeo | jq '.profile | {username, followers, biography}'
 ```
 
-## What you get with and without a session
+## It runs itself
 
-| Data | Logged-out | With `IG_SESSION_IDS` |
+Configure it once; the service handles the rest.
+
+| You provide (once) | The system does automatically |
+|---|---|
+| Spare Instagram accounts as `username:password` (`IG_ACCOUNTS` or `IG_ACCOUNTS_FILE`) | Logs them in, stores sessions encrypted, spreads load (hourly budget per account), rests rate-limited accounts with growing cooldowns, logs in again when a session expires, re-reads the accounts file when it changes |
+| A rotating residential proxy gateway (`PROXY_URL`, optional `PROXY_STICKY_URL`) | New IP for every logged-out request; each account keeps its own stable IP (accounts that hop IPs get flagged) |
+| A Slack/Discord webhook (`ALERT_WEBHOOK_URL`) | Alerts when an account hits a checkpoint or wrong password, the pool runs low, or scraping starts failing (Instagram changed something) |
+
+Things that need a person: approving a login when Instagram flags an account (open the
+Instagram app and tap "This was me"), and turning off 2FA on scraping accounts. The account
+is then picked up again automatically (re-tried every 6h). Wrong passwords are re-tried as soon
+as you fix them in the config.
+
+**Status page:** `GET /health/ready` shows how many accounts are usable, each account's state,
+proxy mode, the recent Instagram success rate, and recent alerts. Account details are shown only
+with a valid `X-API-Key` when `API_KEYS` is set.
+
+### What accounts unlock
+
+| Data | No accounts | With accounts |
 |---|---|---|
 | Profile fields, counts, picture, bio links | yes | yes |
 | Posts | first 12 | paginated up to `posts_limit` |
-| Reels tab | best effort (falls back to reels found in the grid) | yes |
+| Reels tab | best effort (falls back to reels in the grid) | yes |
 | Private profiles | profile fields only | profile fields only |
 
-For volume, use **residential proxies** (`PROXIES`) and several throwaway sessions. Requests are
-throttled (`MIN_REQUEST_INTERVAL`), retried with backoff, and rotated across proxies and sessions.
-When Instagram refuses a logged-out call, the scraper retries it once with a session.
+When Instagram refuses a logged-out request, the scraper automatically repeats it with an
+account. If no account is usable, you still get the logged-out data, plus a warning.
 
 ## Development
 

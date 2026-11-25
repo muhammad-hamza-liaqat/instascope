@@ -1,19 +1,18 @@
 """Low-level async Instagram HTTP client.
 
-Responsibilities: headers/cookies, proxy + session rotation, global throttling,
-retries with exponential backoff, and mapping Instagram responses to domain errors.
-It returns raw JSON; parsing lives in `parsers.py`.
+Responsibilities: headers/cookies, proxy routing, borrowing accounts from the pool,
+global throttling, retries with exponential backoff, mapping Instagram responses to domain
+errors, and rolling success stats. It returns raw JSON; parsing lives in `parsers.py`.
 """
 
 import asyncio
-import itertools
 import logging
 import random
 import string
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
 
 import httpx
 
@@ -27,6 +26,8 @@ from app.core.errors import (
     UpstreamError,
 )
 from app.scraper import endpoints as ep
+from app.scraper.accounts import AccountPool, Lease, session_user_id
+from app.scraper.proxies import ProxyRouter
 
 log = logging.getLogger(__name__)
 
@@ -35,46 +36,80 @@ _BLOCK_MARKERS = ("checkpoint_required", "challenge_required", "feedback_require
 _REDIRECTS = {301, 302, 303, 307, 308}
 
 
+class RollingStats:
+    """Outcome of the most recent Instagram calls, used for health and alerts."""
+
+    def __init__(self, size: int = 100) -> None:
+        self._events: deque[tuple[bool, str | None]] = deque(maxlen=size)
+        self.last_error: str | None = None
+
+    def record(self, ok: bool, error: ScraperError | None = None) -> None:
+        self._events.append((ok, error.code if error else None))
+        if error is not None and not ok:
+            self.last_error = f"{error.code}: {error.message}"[:300]
+
+    def snapshot(self) -> dict[str, Any]:
+        total = len(self._events)
+        failures = sum(1 for ok, _ in self._events if not ok)
+        return {
+            "recent_calls": total,
+            "recent_failures": failures,
+            "failure_ratio": round(failures / total, 3) if total else 0.0,
+            "last_error": self.last_error,
+        }
+
+
 class InstagramClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        pool: AccountPool | None = None,
+        proxies: ProxyRouter | None = None,
+    ) -> None:
         self._s = settings
-        proxies: list[str | None] = [*settings.proxies] or [None]
-        self._clients = [self._build_client(p) for p in proxies]
-        self._client_cycle = itertools.cycle(range(len(self._clients)))
-        self._session_cycle = (
-            itertools.cycle(settings.ig_session_ids) if settings.ig_session_ids else None
-        )
+        self._pool = pool
+        self._proxies = proxies or ProxyRouter(settings)
+        self._clients: dict[tuple[str | None, bool], httpx.AsyncClient] = {}
         self._semaphore = asyncio.Semaphore(settings.max_concurrency)
         self._throttle_lock = asyncio.Lock()
         self._next_allowed = 0.0
+        self.stats = RollingStats()
 
     # ------------------------------------------------------------------ setup
-    def _build_client(self, proxy: str | None) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            http2=True,
-            proxy=proxy,
-            timeout=self._s.request_timeout,
-            follow_redirects=False,
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        )
+    def _http(self, proxy: str | None) -> httpx.AsyncClient:
+        """One pooled client per proxy. Rotating gateways get no keep-alive (new IP per call)."""
+        keepalive = not self._proxies.rotates(proxy)
+        key = (proxy, keepalive)
+        client = self._clients.get(key)
+        if client is None:
+            client = httpx.AsyncClient(
+                http2=True,
+                proxy=proxy,
+                timeout=self._s.request_timeout,
+                follow_redirects=False,
+                limits=httpx.Limits(
+                    max_connections=20, max_keepalive_connections=10 if keepalive else 0
+                ),
+            )
+            self._clients[key] = client
+        return client
 
     @property
-    def has_session(self) -> bool:
-        return self._session_cycle is not None
+    def can_authenticate(self) -> bool:
+        return self._pool is not None and self._pool.can_authenticate
 
     async def aclose(self) -> None:
-        await asyncio.gather(*(c.aclose() for c in self._clients))
+        await asyncio.gather(*(c.aclose() for c in self._clients.values()))
 
-    def _next_client(self) -> httpx.AsyncClient:
-        return self._clients[next(self._client_cycle)]
-
-    def _headers(self, referer: str, session_id: str | None) -> dict[str, str]:
+    def _headers(self, referer: str, lease: Lease | None) -> dict[str, str]:
         csrf = "".join(random.choices(string.ascii_letters + string.digits, k=32))
         cookies = {"csrftoken": csrf, "ig_nrcb": "1"}
-        if session_id:
+        session_id = lease.account.session_id if lease is not None else None
+        if lease is not None and session_id:
             cookies["sessionid"] = session_id
-            user_id = unquote(session_id).split(":", 1)[0]
-            if user_id.isdigit():
+            user_id = lease.account.user_id or session_user_id(session_id)
+            if user_id:
                 cookies["ds_user_id"] = user_id
         return {
             "User-Agent": self._s.user_agent,
@@ -112,40 +147,63 @@ class InstagramClient:
         `auth=True` requires a logged-in session. Otherwise the call goes out logged-out
         first and escalates to a session (if configured) when Instagram refuses.
         """
-        if auth and not self.has_session:
-            raise LoginRequired("This data needs a logged-in session. Set IG_SESSION_IDS in .env.")
+        if auth and not self.can_authenticate:
+            raise LoginRequired(
+                "This data needs a logged-in Instagram account. Add accounts to IG_ACCOUNTS."
+            )
 
-        use_session = auth or self._s.always_use_session
+        use_session = auth or (self._s.always_use_session and self.can_authenticate)
         attempts = self._s.max_retries + 1
-        last_exc: ScraperError | None = None
+        error: ScraperError | None = None
 
         for attempt in range(attempts):
-            session_id = next(self._session_cycle) if use_session and self._session_cycle else None
+            lease: Lease | None = None
+            proxy: str | None = None
+            error = None
             try:
+                if use_session:
+                    assert self._pool is not None
+                    lease = await self._pool.acquire()  # NoAccountAvailable if none usable
+                    proxy = lease.proxy
+                else:
+                    proxy = self._proxies.anonymous()
                 async with self._semaphore:
                     await self._throttle()
-                    resp = await self._next_client().request(
+                    resp = await self._http(proxy).request(
                         method,
                         url,
                         params=params,
                         data=data,
-                        headers=self._headers(referer, session_id),
+                        headers=self._headers(referer, lease),
                     )
-                return self._parse_response(resp)
+                self._proxies.report(proxy, ok=True)
+                payload = self._parse_response(resp)
+                self.stats.record(True)
+                return payload
             except httpx.TransportError as exc:
-                last_exc = UpstreamError(f"Network error talking to Instagram: {exc!r}")
-            except (LoginRequired, Blocked) as exc:
-                if not use_session and self.has_session:
-                    log.info("Instagram refused logged-out call to %s; retrying with session", url)
-                    use_session, last_exc = True, exc
-                    continue
-                raise
+                self._proxies.report(proxy, ok=False)
+                error = UpstreamError(f"Network error talking to Instagram: {exc!r}")
             except ScraperError as exc:
-                if not exc.retryable:
-                    raise
-                last_exc = exc
+                error = exc
+            finally:
+                if lease is not None:
+                    assert self._pool is not None
+                    await self._pool.release(lease, error)
 
-            if attempt < attempts - 1:
+            self.stats.record(isinstance(error, ProfileNotFound), error)
+            if isinstance(error, (LoginRequired, Blocked)) and not use_session:
+                if self.can_authenticate:
+                    log.info("Instagram refused logged-out call to %s; using an account", url)
+                    use_session = True
+                    continue
+                raise error
+            # The account was the problem: retry right away with another one.
+            account_issue = lease is not None and isinstance(
+                error, (LoginRequired, Blocked, RateLimited)
+            )
+            if not (error.retryable or account_issue):
+                raise error
+            if attempt < attempts - 1 and not account_issue:
                 base = self._s.retry_backoff_base
                 delay = base * (2**attempt) + random.uniform(0, base)
                 log.warning(
@@ -155,12 +213,12 @@ class InstagramClient:
                     method,
                     url,
                     delay,
-                    last_exc,
+                    error,
                 )
                 await asyncio.sleep(delay)
 
-        assert last_exc is not None
-        raise last_exc
+        assert error is not None
+        raise error
 
     @staticmethod
     def _parse_response(resp: httpx.Response) -> dict[str, Any]:
@@ -193,7 +251,7 @@ class InstagramClient:
                 raise ProfileNotFound(status=404)
             raise Blocked(
                 "Instagram answered an API call with an HTML 404 — logged-out access from this "
-                "IP is refused. Configure IG_SESSION_IDS and/or PROXIES.",
+                "IP is refused. Configure IG_ACCOUNTS and/or PROXY_URL.",
                 status=404,
             )
         if status in (401, 403) or any(marker in blob for marker in _LOGIN_MARKERS):
@@ -248,7 +306,7 @@ class InstagramClient:
         """Download a CDN file atomically. Never raises; returns success."""
         try:
             async with self._semaphore:
-                resp = await self._next_client().get(
+                resp = await self._http(self._proxies.anonymous()).get(
                     url,
                     headers={"User-Agent": self._s.user_agent, "Referer": ep.BASE_URL + "/"},
                     follow_redirects=True,

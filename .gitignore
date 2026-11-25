@@ -9,3 +9,5 @@ storage/
 .claude/settings.local.json
 .claude/.docs-sync-state
 .DS_Store
+accounts.txt
+*.accounts.txt

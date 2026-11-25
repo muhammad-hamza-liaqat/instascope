@@ -46,7 +46,7 @@ def test_profile_live_then_cache_then_refresh(client, ig):
     assert [p["shortcode"] for p in body["posts"]] == ["AAA111", "BBB222", "CCC333"]
     assert [r["shortcode"] for r in body["reels"]] == ["BBB222", "DDD444"]
     assert body["reels"][0]["plays"] == 2_500_000
-    assert any("IG_SESSION_IDS" in w for w in body["warnings"])  # grid has more, no session
+    assert any("IG_ACCOUNTS" in w for w in body["warnings"])  # grid has more, no session
 
     second = client.get("/api/v1/profiles/natgeo").json()
     assert second["source"] == "cache"
@@ -128,7 +128,7 @@ def test_session_enables_post_pagination(app_factory, ig):
     assert body["posts"][0]["likes"] == 120500  # richer v1 payload wins
     cookie = feed.calls.last.request.headers["cookie"]
     assert "sessionid=123456%3Aabcdef" in cookie and "ds_user_id=123456" in cookie
-    assert not any("IG_SESSION_IDS" in w for w in body["warnings"])
+    assert not any("IG_ACCOUNTS" in w for w in body["warnings"])
 
 
 def test_logged_out_refusal_escalates_to_session(app_factory, ig):

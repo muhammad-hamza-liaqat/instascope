@@ -26,21 +26,29 @@ separate posts/reels/history/list/jobs endpoints; add fields or query params to 
 | `app/core/errors.py` | `ScraperError` hierarchy, each mapped to an HTTP status and `{"error", "detail"}` |
 | `app/core/utils.py` | `normalize_username`, `utcnow`, `as_utc`, logging |
 | `app/scraper/endpoints.py` | **All Instagram URLs**: change here first when Instagram breaks |
-| `app/scraper/client.py` | Headers/cookies, proxy+session rotation, throttle, backoff, status→error mapping, `download()` |
+| `app/scraper/client.py` | Headers/cookies, borrows accounts from the pool (`acquire`/`release`), proxy routing, throttle, backoff, status→error mapping, `RollingStats`, `download()` |
+| `app/scraper/accounts.py` | **Self-managing `AccountPool`**: config/DB sync (accounts file hot-reload), LRU pick + hourly budget, cooldown escalation, auto re-login, checkpoint handling, pool alerts |
+| `app/scraper/login.py` | `web_login` (bootstrap csrf + encryption key, then login form) and `encrypt_password` (browser `#PWD_INSTAGRAM_BROWSER:10`) |
+| `app/scraper/proxies.py` | `ProxyRouter`: rotating gateway (no keep-alive = new IP each call), sticky per-account template, or a list with failure resting |
+| `app/core/crypto.py` | `SecretBox`: Fernet encryption of stored sessions, keyed password fingerprints, auto `storage/.secret_key` |
+| `app/core/alerts.py` | `Alerter`: log + Slack/Discord webhook, de-duplicated per key |
+| `app/services/supervisor.py` | Background loop (every `MAINTENANCE_INTERVAL_SECONDS`): `pool.maintain()` + scrape-failure alert |
 | `app/scraper/parsers.py` | Two media shapes: GraphQL `node` (`parse_graph_post`) and v1 `media` (`parse_v1_media`) |
 | `app/services/profile_service.py` | Orchestration, cache freshness per section, pagination, fallbacks, warnings |
 | `app/services/media_store.py` | Saves `profile.jpg` and `{shortcode}.jpg` to `storage/media/{username}/`, served at `/media` |
-| `app/db/models.py` | `profiles`, `profile_snapshots` (history), `media` (an old dev DB may still have an unused `scrape_jobs` table) |
+| `app/db/models.py` | `profiles`, `profile_snapshots` (history), `media`, `ig_accounts` (pool state, encrypted sessions, no passwords). An old dev DB may still have an unused `scrape_jobs` table |
 | `app/schemas/instagram.py` | Public response models (`ScrapeResult` with `profile`/`posts`/`reels`/`history`/`warnings`, `MediaData`, …) |
 | `tests/fixtures/*.json` | Sample Instagram payloads; keep them matching real response formats |
 
 ## Instagram strategy
 - Profile: `GET /api/v1/users/web_profile_info/?username=` with `X-IG-App-ID`. Logged-out OK, returns the first 12 grid posts.
-- More posts: `GET /api/v1/feed/user/{id}/` needs `IG_SESSION_IDS` (`auth=True`).
+- More posts: `GET /api/v1/feed/user/{id}/` needs a pool account (`auth=True`).
 - Reels: `POST /api/v1/clips/user/`; on failure, fall back to reels in the grid and add a warning.
-- A logged-out call refused with `LoginRequired`/`Blocked` is retried once with a session, if one is configured.
+- A logged-out call refused with `LoginRequired`/`Blocked` is repeated with a pool account (if the pool `can_authenticate`).
+- Account-level failures during a logged-in call (`RateLimited`, `LoginRequired`, `Blocked`) are retried immediately with a different account; the pool updates the failing one (cooling / needs_login / checkpoint).
+- Login: `GET /data/shared_data/` (csrf + `encryption.key_id/public_key/version`, or the `ig-set-password-encryption-web-*` headers) → `POST /api/v1/web/accounts/login/ajax/`. Checkpoints and 2FA are **never bypassed**: flag, alert, re-try every `ACCOUNT_CHECKPOINT_RETRY_SECONDS`.
 - An HTML 404 on an API URL means a block (not "user missing"); a JSON 404 means the profile is not found.
-- Status: as of 2026-11-25 these endpoints are **not verified against live Instagram** (sandbox couldn't reach it). First live run: check them and update fixtures if formats differ.
+- Status: as of 2026-11-25 these endpoints, **including login**, are **not verified against live Instagram** (sandbox couldn't reach it). First live run: check them and update fixtures if formats differ.
 
 ## Conventions
 - Python 3.11+, fully typed, async everywhere; ruff (format owns line length) + mypy clean.
@@ -48,7 +56,10 @@ separate posts/reels/history/list/jobs endpoints; add fields or query params to 
 - No Alembic yet: `init_db` runs `create_all`. A column change needs a migration plan, or deleting `storage/instascope.db` in dev.
 - Errors: raise a `ScraperError` subclass; never return Instagram's raw error text as a 500.
 - Partial data is fine: append to `warnings` instead of failing the whole scrape.
-- Every new behaviour needs a test in `tests/test_api.py` or `tests/test_parsers.py`.
+- Every new behaviour needs a test in `tests/test_api.py`, `tests/test_parsers.py` or `tests/test_self_managing.py` (pool/login/proxy/alerts; `mock_login`/`login_ok` helpers).
+- Self-management principle (user decision, 2026-11-25: "everything handled by itself, it's a product"): no manual steps in normal operation. New failure modes get automatic handling, a `/health/ready` signal and an alert, not a docs note telling a human what to do.
+- Secrets: passwords only in config (env / accounts file, git-ignored); sessions only encrypted in the DB; never log them. `/health/ready` details only with a valid API key.
+- Settings: every `Settings` field must appear in `.env.example` (check in `sync-docs`).
 
 ## Keep Claude context in sync (required)
 After **every** change that adds or alters behaviour, endpoints, settings or structure:
@@ -62,6 +73,7 @@ you once whenever code is newer than these docs.
 
 ## Skills
 - `run-api`: start the server and smoke-test it
+- `manage-accounts`: operate the account pool and proxies (add/fix accounts, read the status page, act on alerts)
 - `update-ig-endpoints`: fix the scraper when Instagram changes its API or response formats
 - `add-endpoint`: add a field or parameter to the single endpoint (schema → service → route → test → docs)
 - `sync-docs`: the after-change documentation checklist
