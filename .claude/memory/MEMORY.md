@@ -1,0 +1,3 @@
+- [InstaScope project](project-instascope.md) — own FastAPI Instagram scraper; status, decisions, unverified live endpoints
+- [Keep Claude docs synced](feedback-keep-claude-docs-synced.md) — update CLAUDE.md, skills, memory after every change
+- [Concise, simple words](feedback-concise-simple-words.md) — always short, beginner-friendly replies (user rule)
