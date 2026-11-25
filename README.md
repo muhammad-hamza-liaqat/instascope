@@ -1,86 +1,159 @@
 # InstaScope
 
-A self-hosted Instagram profile scraper API built on FastAPI. Give it a handle and it returns the
-**bio, profile picture, follower/following/post counts, bio links, business info, posts and
-reels** (with likes, comments, views, plays, audio, hashtags and mentions).
+Give it an Instagram username and it returns that profile's details.
 
-Unlike a pay-per-run actor, every live scrape is **stored**: profile data, Instagram's
-original JSON, follower history, and local copies of profile pictures and covers (Instagram's
-CDN links expire).
+---
 
-## Quick start
+## 1. Purpose
 
-```bash
-cp .env.example .env      # optional: add IG_ACCOUNTS / PROXY_URL / API_KEYS
-make install              # uv sync
-make dev                  # http://localhost:8000 (redirects to /docs)
-```
+InstaScope is our own Instagram scraper, like Apify but ours: no per-run fees, and we keep
+all the data.
 
-Docker: `make docker`. Data is kept in `./storage`.
+You send a username, and it returns:
 
-## API
+- **Profile:** name, bio, profile picture, followers, following, post count, links, verified or business
+- **Posts:** caption, likes, comments, views, hashtags, date, images
+- **Reels:** plays, views, likes, audio, video link
+- **History:** how followers changed over time
 
-There is **one data endpoint**, and it returns everything in a single response:
+It also:
 
-```
-GET /api/v1/profiles/{username}?posts_limit=12&reels_limit=12&refresh=false
-```
+- **Saves everything** in a database, including copies of the pictures.
+- **Answers repeat requests fast** from the database (within 1 hour).
+- **Runs by itself:** it logs in your spare accounts, rotates proxies, rests blocked accounts, and sends alerts.
 
-| Field | Contents |
-|---|---|
-| `profile` | bio, full name, profile picture (`profile_pic_url_hd` and local `profile_pic_local`), followers, following, posts count, bio links, verified/business/private flags, category, contact info |
-| `posts` | grid posts: caption, hashtags, mentions, likes, comments, views, date, location, images/videos, carousel items |
-| `reels` | reels: plays, views, likes, comments, duration, audio, video URL |
-| `history` | follower/following/posts snapshots from earlier scrapes (oldest first) |
-| `source` | `live` (just scraped) or `cache` (served from the database) |
-| `warnings` | partial-data notes, e.g. "only 12 posts available logged-out" |
+---
 
-`{username}` accepts `natgeo` or `@natgeo`. Set `posts_limit=0` or `reels_limit=0` to skip
-a section. Other routes: `/health`, `/health/ready`, and `/media/{username}/...` for saved images.
+## 2. Prerequisites
 
-```bash
-curl localhost:8000/api/v1/profiles/natgeo | jq '.profile | {username, followers, biography}'
-```
+You need:
 
-## It runs itself
-
-Configure it once; the service handles the rest.
-
-| You provide (once) | The system does automatically |
-|---|---|
-| Spare Instagram accounts as `username:password` (`IG_ACCOUNTS` or `IG_ACCOUNTS_FILE`) | Logs them in, stores sessions encrypted, spreads load (hourly budget per account), rests rate-limited accounts with growing cooldowns, logs in again when a session expires, re-reads the accounts file when it changes |
-| A rotating residential proxy gateway (`PROXY_URL`, optional `PROXY_STICKY_URL`) | New IP for every logged-out request; each account keeps its own stable IP (accounts that hop IPs get flagged) |
-| A Slack/Discord webhook (`ALERT_WEBHOOK_URL`) | Alerts when an account hits a checkpoint or wrong password, the pool runs low, or scraping starts failing (Instagram changed something) |
-
-Things that need a person: approving a login when Instagram flags an account (open the
-Instagram app and tap "This was me"), and turning off 2FA on scraping accounts. The account
-is then picked up again automatically (re-tried every 6h). Wrong passwords are re-tried as soon
-as you fix them in the config.
-
-**Status page:** `GET /health/ready` shows how many accounts are usable, each account's state,
-proxy mode, the recent Instagram success rate, and recent alerts. Account details are shown only
-with a valid `X-API-Key` when `API_KEYS` is set.
-
-### What accounts unlock
-
-| Data | No accounts | With accounts |
+| What | Why | How to get it |
 |---|---|---|
-| Profile fields, counts, picture, bio links | yes | yes |
-| Posts | first 12 | paginated up to `posts_limit` |
-| Reels tab | best effort (falls back to reels in the grid) | yes |
-| Private profiles | profile fields only | profile fields only |
+| **Mac or Linux** (Windows with WSL) | to run it | — |
+| **uv** | installs Python and all libraries | `brew install uv` |
+| **make** | short commands like `make dev` | already on Mac (or `xcode-select --install`) |
+| **git** | to download the code | already on Mac |
 
-When Instagram refuses a logged-out request, the scraper automatically repeats it with an
-account. If no account is usable, you still get the logged-out data, plus a warning.
+Optional, but needed for real Instagram data (Instagram blocks a single home IP):
 
-## Development
+| What | Why |
+|---|---|
+| **A spare Instagram account** | an extra account just for this tool, not your personal one, with 2FA off |
+| **A proxy** (residential, rotating) | makes requests come from many different IPs, e.g. Webshare, IPRoyal, Decodo |
+| **Docker** (optional) | only if you want to run it in Docker |
+
+You don't need to install Python yourself; uv does it.
+
+---
+
+## 3. How to install
 
 ```bash
-make check   # ruff + mypy + pytest
+# 1. Download the code
+git clone https://github.com/muhammad-hamza-liaqat/instascope.git
+cd instascope
+
+# 2. Install everything (Python + libraries)
+make install
+
+# 3. Create your settings file
+cp .env.example .env
 ```
 
-Tests mock every Instagram call (`respx`), so they run offline. Fixtures in `tests/fixtures/`
-mirror Instagram's response formats.
+### Add a spare account (recommended)
 
-> Scraping Instagram is against Meta's Terms of Use. Collect only public data, respect rate
-> limits, and comply with privacy law (GDPR/CCPA) for what you store.
+1. Create a file called `accounts.txt` in the project folder.
+2. Add one line per account:
+   ```
+   your_spare_username:your_password
+   ```
+3. In `.env`, set:
+   ```
+   IG_ACCOUNTS_FILE=accounts.txt
+   ```
+
+### Add a proxy (optional)
+
+In `.env`, set the link your proxy company gives you:
+```
+PROXY_URL=http://USERNAME:PASSWORD@gate.provider.com:7000
+```
+
+`.env` and `accounts.txt` are never uploaded to GitHub, so your passwords stay private.
+
+---
+
+## 4. How to run
+
+```bash
+make dev
+```
+
+Then open **http://127.0.0.1:8000** in your browser. It shows the API page.
+
+### Try it
+
+1. Click **GET /api/v1/profiles/{username}**.
+2. Click **Try it out**.
+3. Type a username, for example `natgeo`.
+4. Click **Execute**.
+
+Or use the terminal:
+```bash
+curl http://127.0.0.1:8000/api/v1/profiles/natgeo
+```
+
+### Check that everything is OK
+
+Open **http://127.0.0.1:8000/health/ready** to see:
+- how many accounts work right now (`active`)
+- whether a proxy is set
+- recent errors and alerts
+
+### Stop it
+
+Press `Ctrl + C` in the terminal.
+
+### Run with Docker (optional)
+
+```bash
+make docker
+```
+
+---
+
+## 5. Useful commands
+
+| Command | What it does |
+|---|---|
+| `make install` | install everything |
+| `make dev` | start the server |
+| `make test` | run the tests |
+| `make check` | run all checks (code style, types, tests) |
+| `make docker` | run in Docker |
+| `make memory-sync` | save Claude's project memory into the repo |
+
+---
+
+## 6. Common problems
+
+| You see | Meaning | Fix |
+|---|---|---|
+| `"error": "blocked"` | Instagram blocked your IP | add a spare account and/or a proxy |
+| account status `checkpoint` | Instagram wants to confirm the login | open Instagram on that account and tap **"This was me"** |
+| account status `bad_credentials` | wrong password | fix it in `accounts.txt` |
+| warning "Only the first 12 posts…" | no logged-in account | add a spare account |
+| `{"detail":"Not Found"}` | wrong address | use http://127.0.0.1:8000 |
+
+---
+
+## 7. For developers
+
+- API: one endpoint, `GET /api/v1/profiles/{username}?posts_limit=12&reels_limit=12&refresh=false`
+- Every setting is explained in `.env.example`.
+- Code guide and architecture: `CLAUDE.md`.
+- Tests work offline (Instagram is mocked): `make check`.
+
+> Scraping Instagram is against Meta's Terms of Use. Collect only public data, don't send too
+> many requests, and follow privacy laws for the data you store.
