@@ -12,6 +12,9 @@ Everything is automatic once configured. A person is only needed for the cases i
 - Many accounts: put them in a git-ignored file, set `IG_ACCOUNTS_FILE=accounts.txt`, one
   `username:password` per line. The file is **hot-reloaded**: no restart needed.
 - A few accounts: `IG_ACCOUNTS=user1:pw1,user2:pw2` in `.env` (needs a restart).
+- Checkpoint that can't be approved: add the browser's `sessionid` cookie to the line, as
+  `username:password session=<sessionid>`. It's used right away; if it expires, the password re-logs in.
+  A saved session is applied only when it's new in the file, so an old one never overrides a fresher one.
 - `IG_SESSION_IDS` = session-only accounts. They can't re-login, so prefer username:password.
 - Don't print, log or commit passwords or session values.
 

@@ -84,6 +84,39 @@ def parse_profile(user: dict[str, Any]) -> ProfileData:
     )
 
 
+def parse_profile_v1(user: dict[str, Any]) -> ProfileData:
+    """Profile from a v1-style user object (web GraphQL `PolarisProfilePageContentQuery`)."""
+    links = [
+        BioLink(title=link.get("title") or None, url=link["url"])
+        for link in user.get("bio_links") or []
+        if isinstance(link, dict) and link.get("url")
+    ]
+    hd = (user.get("hd_profile_pic_url_info") or {}).get("url")
+    return ProfileData(
+        id=str(user.get("pk") or user["id"]),
+        username=user["username"],
+        full_name=user.get("full_name") or None,
+        biography=user.get("biography") or None,
+        bio_links=links,
+        external_url=user.get("external_url") or None,
+        followers=_int(user.get("follower_count")) or 0,
+        following=_int(user.get("following_count")) or 0,
+        posts_count=_int(user.get("media_count")) or 0,
+        highlight_count=_int(user.get("highlight_reel_count")),
+        is_private=bool(user.get("is_private")),
+        is_verified=bool(user.get("is_verified")),
+        is_business=bool(user.get("is_business")),
+        is_professional=bool(user.get("is_professional_account")),
+        category=user.get("category") or user.get("category_name") or None,
+        business_email=user.get("public_email") or user.get("business_email") or None,
+        business_phone=user.get("public_phone_number") or user.get("contact_phone_number") or None,
+        pronouns=list(user.get("pronouns") or []),
+        profile_pic_url=user.get("profile_pic_url") or None,
+        profile_pic_url_hd=hd or user.get("profile_pic_url") or None,
+        fbid=str(user["fbid_v2"]) if user.get("fbid_v2") else None,
+    )
+
+
 def timeline_nodes(user: dict[str, Any]) -> list[dict[str, Any]]:
     edges = _dig(user, "edge_owner_to_timeline_media", "edges") or []
     return [edge["node"] for edge in edges if isinstance(edge, dict) and edge.get("node")]

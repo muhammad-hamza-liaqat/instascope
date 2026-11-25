@@ -44,6 +44,17 @@ class NoAccountAvailable(LoginRequired):
     code = "no_account_available"
 
 
+class NotServed(ScraperError):
+    """Instagram answered an API call with an HTML page (404/login page) instead of data.
+
+    Not the account's fault: the endpoint is refused or no longer exists for this kind of
+    request. Accounts are left untouched.
+    """
+
+    status_code = 503
+    code = "not_served"
+
+
 class Blocked(ScraperError):
     """Instagram blocked the request (checkpoint/challenge/login wall). Use proxies or accounts."""
 

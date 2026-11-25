@@ -81,11 +81,21 @@ def test_not_found_null_user(client, ig):
     assert client.get("/api/v1/profiles/ghost").status_code == 404
 
 
-def test_html_404_is_reported_as_blocked(client, ig):
+def test_html_404_is_reported_as_not_served(client, ig):
     ig.get(ep.WEB_PROFILE_INFO).respond(404, html="<html>Page Not Found</html>")
     resp = client.get("/api/v1/profiles/natgeo")
     assert resp.status_code == 503
-    assert resp.json()["error"] == "blocked"
+    assert resp.json()["error"] == "not_served"
+
+
+def test_html_404_while_logged_in_does_not_blame_the_account(app_factory, ig):
+    client = app_factory(ig_session_ids=["111%3Aaaa"])
+    route = ig.get(ep.WEB_PROFILE_INFO).respond(404, html="<html>Page Not Found</html>")
+    ig.get("https://www.instagram.com/natgeo/").respond(200, html="<html>no tokens</html>")
+    resp = client.get("/api/v1/profiles/natgeo")
+    assert resp.json()["error"] == "not_served"
+    assert route.call_count == 2  # logged-out, then once with the account
+    assert client.get("/health/ready").json()["accounts"]["by_status"] == {"active": 1}
 
 
 def test_rate_limit_retries_then_429(client, ig):

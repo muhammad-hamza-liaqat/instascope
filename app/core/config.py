@@ -63,6 +63,10 @@ class Settings(BaseSettings):
 
     # --- scraper ---
     ig_app_id: str = "936619743392459"
+    # Web GraphQL query ids (captured from instagram.com 2026-11-25; update when Instagram changes)
+    ig_doc_profile: str = "29609640381972919"
+    ig_doc_posts: str = "39818828461098125"
+    ig_doc_reels: str = "30033462306341888"
     ig_asbd_id: str = "129477"
     user_agent: str = DEFAULT_USER_AGENT
     request_timeout: float = 20.0

@@ -8,7 +8,6 @@ Unverified against live Instagram as of 2026-11-25 (see CLAUDE.md).
 """
 
 import base64
-import json
 import logging
 import os
 import re
@@ -70,27 +69,54 @@ def _cookie(jar: httpx.Cookies, name: str) -> str | None:
         return next((c.value for c in jar.jar if c.name == name), None)
 
 
-_CSRF_HTML = re.compile(r'"csrf_token"\s*:\s*"([^"]+)"')
-_ENCRYPTION_HTML = re.compile(r'"encryption"\s*:\s*(\{[^{}]*\})')
+# Instagram embeds these values in its HTML, sometimes JSON-escaped (\"key_id\":\"251\").
+_Q = r'\\?"'  # optional backslash + quote
+_CSRF_HTML = re.compile(_Q + r"csrf_token" + _Q + r"\s*:\s*" + _Q + r"([A-Za-z0-9_-]{8,})")
+_KEY_ID_HTML = re.compile(_Q + r"key_id" + _Q + r"\s*:\s*(?:" + _Q + r")?(\d+)")
+_PUB_KEY_HTML = re.compile(_Q + r"public_key" + _Q + r"\s*:\s*" + _Q + r"([0-9a-fA-F]{64})")
+_VERSION_HTML = re.compile(_Q + r"version" + _Q + r"\s*:\s*(?:" + _Q + r")?(\d+)")
 
 
-def _key_from(resp: httpx.Response, data: dict[str, Any]) -> tuple[str | None, str | None, str]:
+_ENCRYPTION_ANCHOR = re.compile(_Q + r"encryption" + _Q + r"\s*:\s*\{")
+
+
+def find_key(resp: httpx.Response, data: dict[str, Any]) -> tuple[str | None, str | None, str, str]:
+    """Return (key_id, public_key, version, where_found). Sources, most reliable first:
+    the JSON `encryption` object, the `ig-set-password-encryption-web-*` headers, then an
+    `encryption` object embedded in the HTML. All three values must come from the same place.
+    """
     enc = data.get("encryption") or {}
-    if not enc and "html" in resp.headers.get("content-type", ""):
-        match = _ENCRYPTION_HTML.search(resp.text)
-        if match:
-            try:
-                enc = json.loads(match.group(1))
-            except ValueError:
-                enc = {}
-    key_id = enc.get("key_id") or resp.headers.get("ig-set-password-encryption-web-key-id")
-    pub_key = enc.get("public_key") or resp.headers.get("ig-set-password-encryption-web-pub-key")
-    version = enc.get("version") or resp.headers.get("ig-set-password-encryption-web-key-version")
-    return (
-        str(key_id) if key_id else None,
-        str(pub_key) if pub_key else None,
-        str(version or "10"),
-    )
+    if enc.get("key_id") and enc.get("public_key"):
+        return str(enc["key_id"]), str(enc["public_key"]), str(enc.get("version") or "10"), "json"
+
+    h = resp.headers
+    if h.get("ig-set-password-encryption-web-key-id") and h.get(
+        "ig-set-password-encryption-web-pub-key"
+    ):
+        return (
+            h["ig-set-password-encryption-web-key-id"],
+            h["ig-set-password-encryption-web-pub-key"],
+            h.get("ig-set-password-encryption-web-key-version") or "10",
+            "headers",
+        )
+
+    if "json" not in h.get("content-type", ""):
+        text = resp.text
+        for anchor in _ENCRYPTION_ANCHOR.finditer(text):
+            window = text[anchor.end() : anchor.end() + 600]
+            closing = window.find("}")
+            window = window[:closing] if closing != -1 else window
+            key_match = _KEY_ID_HTML.search(window)
+            pub_match = _PUB_KEY_HTML.search(window)
+            if key_match and pub_match:
+                ver_match = _VERSION_HTML.search(window)
+                return (
+                    key_match.group(1),
+                    pub_match.group(1),
+                    ver_match.group(1) if ver_match else "10",
+                    "html",
+                )
+    return None, None, "10", "none"
 
 
 async def _bootstrap(
@@ -100,6 +126,7 @@ async def _bootstrap(
     sources = [
         (ep.SHARED_DATA, headers),
         (ep.LOGIN_PAGE, {**headers, "Accept": "text/html,application/xhtml+xml"}),
+        (ep.WEB_SHARED_DATA, headers),
     ]
     csrf: str | None = None
     key_id: str | None = None
@@ -126,18 +153,33 @@ async def _bootstrap(
             or (data.get("config") or {}).get("csrf_token")
             or _cookie(http.cookies, "csrftoken")
         )
-        if not csrf and "html" in resp.headers.get("content-type", ""):
+        if not csrf and "json" not in resp.headers.get("content-type", ""):
             match = _CSRF_HTML.search(resp.text)
             csrf = match.group(1) if match else None
-        found = _key_from(resp, data)
-        if found[0] and found[1]:
-            key_id, pub_key, version = found
+        if not (key_id and pub_key):
+            found_id, found_pub, found_version, where = find_key(resp, data)
+            if found_id and found_pub:
+                key_id, pub_key, version = found_id, found_pub, found_version
+                log.info(
+                    "Login key from %s of %s (key_id=%s, version=%s)",
+                    where,
+                    url.split("instagram.com", 1)[-1],
+                    key_id,
+                    version,
+                )
         if csrf and key_id and pub_key:
             break
-        errors.append(f"{url}: HTTP {resp.status_code}")
+        missing = [n for n, v in (("csrf", csrf), ("key", key_id and pub_key)) if not v]
+        errors.append(
+            f"{url.split('instagram.com', 1)[-1]}: HTTP {resp.status_code}, no {'+'.join(missing)}"
+        )
     if not csrf:
         return LoginResult(
             LoginStatus.ERROR, message="could not obtain csrftoken (" + "; ".join(errors) + ")"
+        )
+    if not (key_id and pub_key):
+        log.info(
+            "No password-encryption key offered (%s); using the plain format", "; ".join(errors)
         )
     return csrf, key_id, pub_key, version
 
@@ -170,7 +212,8 @@ async def web_login(
             password, key_id=int(key_id), public_key_hex=pub_key, version=version
         )
     else:
-        log.info("No encryption key offered; using plain-text login format for %s", username)
+        # Verified live 2026-11-25: with no key on offer, Instagram accepts version 0 (sent over
+        # HTTPS). Never guess a key: a wrong key makes Instagram answer "wrong password".
         enc_password = f"#PWD_INSTAGRAM_BROWSER:0:{int(time.time())}:{password}"
 
     # 2. Login.

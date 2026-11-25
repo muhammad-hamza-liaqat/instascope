@@ -116,12 +116,18 @@ def configured_accounts(settings: Settings) -> list[tuple[str, str | None, str |
 
     accounts: dict[str, tuple[str, str | None, str | None]] = {}
     for entry in entries:
+        # Optional saved login: "username:password session=<sessionid cookie>"
+        seed: str | None = None
+        if " session=" in entry:
+            entry, _, seed = entry.rpartition(" session=")
+            seed = seed.strip() or None
         username, sep, password = entry.partition(":")
         username = username.strip().lstrip("@").lower()
+        password = password.rstrip()
         if not username or not sep or not password:
             log.warning("Ignoring malformed account entry (expected username:password)")
             continue
-        accounts[username] = (username, password, None)
+        accounts[username] = (username, password, seed)
     for session_id in settings.ig_session_ids:
         uid = session_user_id(session_id) or hashlib.sha1(session_id.encode()).hexdigest()[:10]
         name = f"session_{uid}"
@@ -222,8 +228,13 @@ class AccountPool:
                     if acc is None:
                         row = rows.get(username)
                         acc = self._from_row(row) if row else Account(username=username)
-                        if acc.status in (AccountStatus.NEEDS_LOGIN, AccountStatus.CHECKPOINT):
-                            acc.next_login_at = None  # restart = "I fixed it": try logging in now
+                        if acc.status in (
+                            AccountStatus.NEEDS_LOGIN,
+                            AccountStatus.CHECKPOINT,
+                            AccountStatus.BAD_CREDENTIALS,
+                        ):
+                            # restart = "I fixed it": try logging in once now
+                            acc.status, acc.next_login_at = AccountStatus.NEEDS_LOGIN, None
                         self._accounts[username] = acc
                     self._reconcile(acc, password, seed_session)
                     self._write(session, acc, rows.get(username))
@@ -241,19 +252,27 @@ class AccountPool:
 
     def _reconcile(self, acc: Account, password: str | None, seed_session: str | None) -> None:
         acc.password = password
-        fingerprint = self._box.fingerprint(password) if password else None
+        # Fingerprint of the config entry (password + optional saved session): lets us notice
+        # edits without storing either value. Unchanged for entries without a session.
+        if seed_session:
+            fingerprint: str | None = self._box.fingerprint(
+                (password or "") + "\x00session:" + seed_session
+            )
+        else:
+            fingerprint = self._box.fingerprint(password) if password else None
+        changed = fingerprint != acc.password_fp
         if acc.status == AccountStatus.DISABLED:
             acc.status = AccountStatus.NEEDS_LOGIN
-        if fingerprint != acc.password_fp and acc.status in (
-            AccountStatus.BAD_CREDENTIALS,
-            AccountStatus.CHECKPOINT,
-        ):
-            acc.status, acc.next_login_at = AccountStatus.NEEDS_LOGIN, None  # new password: retry
+        if changed and acc.status in (AccountStatus.BAD_CREDENTIALS, AccountStatus.CHECKPOINT):
+            acc.status, acc.next_login_at = AccountStatus.NEEDS_LOGIN, None  # new config: retry
         acc.password_fp = fingerprint
-        if seed_session and seed_session != acc.session_id:
+        # Apply a saved session when it is new in the config, or when the account has no session
+        # at all; an old one in the file never overwrites a fresher session from a re-login.
+        if seed_session and (changed or not acc.session_id) and seed_session != acc.session_id:
             acc.session_id = seed_session
             acc.user_id = session_user_id(seed_session)
-            acc.status = AccountStatus.ACTIVE
+            acc.status, acc.next_login_at, acc.last_error = AccountStatus.ACTIVE, None, None
+            log.info("Using the saved session from config for %s", acc.username)
         if acc.status in (AccountStatus.ACTIVE, AccountStatus.COOLING) and not acc.session_id:
             acc.status = AccountStatus.NEEDS_LOGIN
 

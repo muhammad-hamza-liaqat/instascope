@@ -1,4 +1,4 @@
-.PHONY: install dev test lint fmt typecheck check docker memory-sync diagnose
+.PHONY: install dev test lint fmt typecheck check docker memory-sync diagnose diagnose-login
 
 install:
 	uv sync
@@ -33,3 +33,7 @@ memory-sync:
 HANDLE ?= natgeo
 diagnose:
 	uv run python scripts/diagnose_instagram.py $(HANDLE)
+
+# Show what Instagram's login pages offer (no login, no password sent).
+diagnose-login:
+	uv run python scripts/diagnose_login.py

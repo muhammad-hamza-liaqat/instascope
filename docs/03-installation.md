@@ -19,6 +19,11 @@ cp .env.example .env
    ```
    your_spare_username:your_password
    ```
+   If Instagram keeps asking to "confirm it's you", add your browser login to the line
+   (Chrome → `Cmd+Option+I` → Application → Cookies → instagram.com → copy `sessionid`):
+   ```
+   your_spare_username:your_password session=PASTE_SESSIONID_HERE
+   ```
 3. In `.env`, set:
    ```
    IG_ACCOUNTS_FILE=accounts.txt

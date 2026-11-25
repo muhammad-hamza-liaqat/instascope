@@ -15,6 +15,10 @@ USER_FEED = BASE_URL + "/api/v1/feed/user/{user_id}/"
 LOGIN_PAGE = f"{BASE_URL}/accounts/login/"
 SHARED_DATA = f"{BASE_URL}/data/shared_data/"
 LOGIN_AJAX = f"{BASE_URL}/api/v1/web/accounts/login/ajax/"
+WEB_SHARED_DATA = f"{BASE_URL}/api/v1/web/data/shared_data/"
+
+# Web-app GraphQL (what instagram.com uses now; see app/scraper/web.py).
+GRAPHQL = f"{BASE_URL}/api/graphql"
 
 # Reels tab (POST, form-encoded). Sometimes works logged-out; escalates to session when refused.
 CLIPS_USER = f"{BASE_URL}/api/v1/clips/user/"

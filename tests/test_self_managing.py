@@ -206,6 +206,7 @@ def test_login_reports_why_bootstrap_failed(app_factory, ig):
     client = app_factory(ig_accounts=["scraper1:pw"])
     ig.get(ep.SHARED_DATA).respond(404, html="<html></html>")
     ig.get(ep.LOGIN_PAGE).respond(403, html="<html></html>")
+    ig.get(ep.WEB_SHARED_DATA).respond(404, html="<html></html>")
     mock_profile(ig)
     mock_clips(ig)
     client.get("/api/v1/profiles/natgeo", params={"posts_limit": 50})
@@ -215,6 +216,85 @@ def test_login_reports_why_bootstrap_failed(app_factory, ig):
         "could not obtain csrftoken" in account["last_error"]
         and "HTTP 403" in account["last_error"]
     )
+
+
+def test_login_finds_key_in_escaped_page_json(app_factory, ig):
+    client = app_factory(ig_accounts=["scraper1:pw"])
+    ig.get(ep.SHARED_DATA).respond(404, html="<html></html>")
+    pub = IG_KEY.public_key.encode().hex()
+    escaped = (
+        '<script>{"require":"{\\"csrf_token\\":\\"esc4p3dT0ken\\",'
+        '\\"encryption\\":{\\"key_id\\":\\"251\\",'
+        f'\\"public_key\\":\\"{pub}\\",\\"version\\":\\"10\\"}}"}}</script>'
+    )
+    ig.get(ep.LOGIN_PAGE).respond(200, html=f"<html>{escaped}</html>")
+    login = ig.post(ep.LOGIN_AJAX).mock(return_value=login_ok())
+    mock_profile(ig)
+    mock_clips(ig)
+    mock_feed(ig)
+
+    body = client.get("/api/v1/profiles/natgeo", params={"posts_limit": 50}).json()
+    assert len(body["posts"]) == 4
+    assert login.calls.last.request.headers["x-csrftoken"] == "esc4p3dT0ken"
+
+
+def test_html_key_comes_from_encryption_block_not_decoys(tmp_path):
+    from app.scraper.login import find_key
+
+    pub = IG_KEY.public_key.encode().hex()
+    decoy = "ab" * 32
+    html = (
+        f'<script>{{"key_id":"999","public_key":"{decoy}","version":"3"}}</script>'
+        f'<script>{{"encryption":{{"key_id":"251","public_key":"{pub}","version":"10"}}}}</script>'
+    )
+    resp = httpx.Response(200, html=html, request=httpx.Request("GET", ep.LOGIN_PAGE))
+    assert find_key(resp, {}) == ("251", pub, "10", "html")
+    with_header = httpx.Response(
+        200,
+        html=html,
+        headers={
+            "ig-set-password-encryption-web-key-id": "77",
+            "ig-set-password-encryption-web-pub-key": pub,
+        },
+        request=httpx.Request("GET", ep.LOGIN_PAGE),
+    )
+    assert find_key(with_header, {})[3] == "headers"  # headers beat HTML
+
+
+def test_no_key_uses_plain_format_and_logs_in(app_factory, ig):
+    client = app_factory(ig_accounts=["scraper1:pw"])
+    ig.get(ep.SHARED_DATA).respond(404, html="<html></html>")
+    ig.get(ep.LOGIN_PAGE).respond(
+        200,
+        html='<html><script>{"key_id":"2"}</script></html>',  # stray key_id, no real key
+        headers={"set-cookie": "csrftoken=tok12345; Domain=.instagram.com; Path=/"},
+    )
+    ig.get(ep.WEB_SHARED_DATA).respond(404, html="<html></html>")
+    login = ig.post(ep.LOGIN_AJAX).mock(return_value=login_ok())
+    mock_profile(ig)
+    mock_clips(ig)
+    mock_feed(ig)
+
+    body = client.get("/api/v1/profiles/natgeo", params={"posts_limit": 50}).json()
+    assert len(body["posts"]) == 4
+    form = login.calls.last.request.content.decode()
+    assert "PWD_INSTAGRAM_BROWSER%3A0%3A" in form  # plain format, no guessed key
+    assert client.get("/health/ready").json()["accounts"]["by_status"] == {"active": 1}
+
+
+def test_restart_retries_bad_credentials_once(app_factory, ig):
+    login = mock_login(ig, login_bad_password(), login_ok())
+    mock_profile(ig)
+    mock_clips(ig)
+    mock_feed(ig)
+    first = app_factory(ig_accounts=["scraper1:pw"])
+    first.get("/api/v1/profiles/natgeo", params={"posts_limit": 50})
+    assert first.get("/health/ready").json()["accounts"]["by_status"] == {"bad_credentials": 1}
+    first.__exit__(None, None, None)
+
+    second = app_factory(ig_accounts=["scraper1:pw"])  # same DB = a restart
+    body = second.get("/api/v1/profiles/natgeo", params={"posts_limit": 50, "refresh": True}).json()
+    assert len(body["posts"]) == 4 and login.call_count == 2
 
 
 def test_checkpoint_is_flagged_alerted_and_scrape_still_returns(app_factory, ig):
@@ -293,6 +373,38 @@ def test_ready_hides_account_details_without_api_key(app_factory):
 
 
 # ------------------------------------------------- pool maintenance (direct)
+async def test_saved_session_in_accounts_file(tmp_path, ig):
+    accounts_file = tmp_path / "accounts.txt"
+    accounts_file.write_text("alpha:pw:with:colons session=777%3Aseeded\n")
+    settings = make_settings(tmp_path, ig_accounts_file=accounts_file)
+    engine = create_engine(settings.database_url)
+    await init_db(engine)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    box = SecretBox.from_settings("k", tmp_path)
+
+    def new_pool() -> AccountPool:
+        return AccountPool(settings, sessions, box, ProxyRouter(settings), Alerter(settings))
+
+    try:
+        pool = new_pool()
+        await pool.sync()
+        assert pool.counts() == {"active": 1}
+        lease = await pool.acquire()
+        assert lease.account.session_id == "777%3Aseeded" and lease.account.user_id == "777"
+        assert lease.account.password == "pw:with:colons"
+        await pool.release(lease, None)
+
+        # Pretend the tool re-logged in later and got a fresher session.
+        lease.account.session_id = "777%3Afresh"
+        await pool.flush()
+        restarted = new_pool()
+        await restarted.sync()  # same file: the old saved session must NOT win again
+        lease = await restarted.acquire()
+        assert lease.account.session_id == "777%3Afresh"
+    finally:
+        await engine.dispose()
+
+
 async def test_accounts_file_hot_reload_password_fix_and_removal(tmp_path, ig):
     accounts_file = tmp_path / "accounts.txt"
     accounts_file.write_text("# scraping accounts\nalpha:pw1\n")

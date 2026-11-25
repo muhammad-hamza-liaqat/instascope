@@ -16,6 +16,7 @@ description: Diagnose and fix the scraper when Instagram changes endpoints, head
 | reels warning "Reels tab unavailable" | clips endpoint changed | `endpoints.CLIPS_USER`, `client.fetch_user_clips` |
 | every account ends in `needs_login` with `login error: ...` | login flow changed | `login.py::web_login`, `endpoints.SHARED_DATA/LOGIN_AJAX` |
 | login `error: could not obtain csrftoken` / no encryption key | bootstrap changed | `login.py` bootstrap section (JSON `config`/`encryption` or `ig-set-password-encryption-web-*` headers) |
+| GraphQL error / `not_served` from the web flow | doc_id changed | open the profile in Chrome, Network → `/api/graphql`, copy the new `doc_id` for the query name into `.env` (`IG_DOC_PROFILE/POSTS/REELS`) |
 | alert `scrape_failing` | anything above, or proxies dead | `/health/ready` → `scraping.last_error` |
 
 ## 2. Capture a real payload (only with the user's OK, against a handle they choose)
