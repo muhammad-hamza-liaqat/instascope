@@ -1,4 +1,4 @@
-.PHONY: install dev test lint fmt typecheck check docker
+.PHONY: install dev test lint fmt typecheck check docker memory-sync
 
 install:
 	uv sync
@@ -23,3 +23,8 @@ check: lint typecheck test
 
 docker:
 	docker compose up --build
+
+# Copy Claude's project memory into the repo (.claude/memory/) so it is versioned.
+CLAUDE_MEMORY := $(HOME)/.claude/projects/-Users-muhammad-hamza-Desktop-untitled-folder/memory
+memory-sync:
+	mkdir -p .claude/memory && cp "$(CLAUDE_MEMORY)"/*.md .claude/memory/ && ls .claude/memory

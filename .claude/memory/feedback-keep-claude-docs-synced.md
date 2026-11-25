@@ -12,4 +12,6 @@ After every change to a project, update CLAUDE.md, the relevant `.claude/skills/
 
 **Why:** The user asked (2026-11-25) to "keep the claude skills and memory updated as well, on every page it should save everything, top notch setup". They want context to persist and stay accurate across sessions.
 
+Also keep a copy of memory in the repo at `.claude/memory/` (user asked 2026-11-25: "save the memories in the repo as well"); refresh it with `make memory-sync`.
+
 **How to apply:** End each change with the project's `sync-docs` checklist (see [[project-instascope]]). Prefer updating existing docs and memories over adding duplicates.

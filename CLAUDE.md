@@ -66,11 +66,16 @@ separate posts/reels/history/list/jobs endpoints; add fields or query params to 
 After **every** change that adds or alters behaviour, endpoints, settings or structure:
 1. Update this file (architecture table, strategy, conventions).
 2. Update the affected skill(s) in `.claude/skills/`, or add one for a new repeatable workflow.
-3. Update project memory (`~/.claude/projects/-Users-muhammad-hamza-Desktop-untitled-folder/memory/`).
+3. Update project memory (`~/.claude/projects/-Users-muhammad-hamza-Desktop-untitled-folder/memory/`), then run `make memory-sync` so the repo copy in `.claude/memory/` matches (user rule, 2026-11-25).
 4. Update `README.md` and `.env.example` when user-facing.
 
 The `sync-docs` skill has the checklist. The Stop hook `.claude/hooks/docs_sync_check.py` reminds
 you once whenever code is newer than these docs.
+
+## Project memory (in the repo)
+`.claude/memory/` mirrors Claude's memory for this project (decisions, user preferences, open issues).
+Read `.claude/memory/MEMORY.md` at the start of a session, especially on a new machine. Never put secrets there.
+Standing user rule: chat replies short, in simple beginner-friendly words.
 
 ## Skills
 - `run-api`: start the server and smoke-test it

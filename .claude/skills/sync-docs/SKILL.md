@@ -14,6 +14,7 @@ Go through each item; edit only what the change actually affected.
 - [ ] **Memory** (`~/.claude/projects/-Users-muhammad-hamza-Desktop-untitled-folder/memory/`):
       update `project-instascope.md` with decisions, status and open issues, with absolute dates.
       Record new user preferences as `feedback`/`user` memories and keep `MEMORY.md` indexed.
+      Then run `make memory-sync` to copy memory into the repo (`.claude/memory/`). No secrets.
 - [ ] **README.md**: endpoint table, feature list, session/proxy table.
 - [ ] **.env.example**: every field in `app/core/config.py::Settings` appears here with a comment.
 - [ ] `make check` passes.
