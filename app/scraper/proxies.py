@@ -30,6 +30,7 @@ class ProxyRouter:
         self._gateway = settings.proxy_url
         self._sticky = settings.proxy_sticky_url
         self._list = list(settings.proxies)
+        self._accounts_use_proxy = settings.accounts_use_proxy
         self._rr = itertools.count()
         self._failures: dict[str, int] = {}
         self._rest_until: dict[str, float] = {}
@@ -51,6 +52,8 @@ class ProxyRouter:
         return healthy[next(self._rr) % len(healthy)] if healthy else None
 
     def for_account(self, username: str) -> str | None:
+        if not self._accounts_use_proxy:
+            return None  # accounts use this machine's own internet (matches the owner's location)
         if self._sticky:
             return self._sticky.replace("{session}", _token(username))
         if self._gateway:
@@ -85,4 +88,5 @@ class ProxyRouter:
             "list_size": len(self._list),
             "list_resting": len(self._list) - len(self._healthy()) if self._list else 0,
             "sticky_per_account": bool(self._sticky),
+            "accounts_use_proxy": self._accounts_use_proxy,
         }

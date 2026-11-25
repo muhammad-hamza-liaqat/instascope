@@ -126,6 +126,14 @@ def test_proxy_provider_formats_are_normalized(tmp_path):
     ]
 
 
+def test_accounts_can_skip_proxy(tmp_path):
+    router = ProxyRouter(
+        make_settings(tmp_path, proxies=["http://p1", "http://p2"], accounts_use_proxy=False)
+    )
+    assert router.for_account("alpha") is None  # own internet for logged-in traffic
+    assert router.anonymous() in {"http://p1", "http://p2"}  # proxies still used logged-out
+
+
 def test_proxy_list_rests_failing_proxy(tmp_path):
     router = ProxyRouter(make_settings(tmp_path, proxies=["http://p1", "http://p2"]))
     assert {router.anonymous(), router.anonymous()} == {"http://p1", "http://p2"}

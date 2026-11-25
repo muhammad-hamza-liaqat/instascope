@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     proxy_url: str | None = None  # rotating residential gateway
     proxy_sticky_url: str | None = None  # gateway template with {session}: stable IP per account
     proxies: CsvList = []  # or a plain list, rotated and health-checked
+    accounts_use_proxy: bool = True  # False: accounts log in/scrape from this machine's own IP
 
     # --- self-management ---
     maintenance_interval_seconds: int = 60  # background loop; 0 disables it
