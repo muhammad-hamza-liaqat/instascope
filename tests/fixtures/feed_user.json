@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "pk": "3001", "id": "3001_787132", "code": "AAA111", "media_type": 1, "taken_at": 1732000000,
+      "caption": {"text": "Sunrise over the Alps #Mountains #travel with @explorer."},
+      "like_count": 120500, "comment_count": 341,
+      "image_versions2": {"candidates": [{"url": "https://cdn.example.com/1.jpg"}]},
+      "original_width": 1080, "original_height": 1350, "user": {"username": "natgeo"},
+      "location": {"name": "Swiss Alps"}
+    },
+    {
+      "pk": "3004", "id": "3004_787132", "code": "EEE555", "media_type": 8, "taken_at": 1731600000,
+      "caption": {"text": "Field notes"}, "like_count": 5000, "comment_count": 20,
+      "carousel_media": [
+        {"media_type": 1, "image_versions2": {"candidates": [{"url": "https://cdn.example.com/5a.jpg"}]}},
+        {"media_type": 2, "image_versions2": {"candidates": [{"url": "https://cdn.example.com/5b.jpg"}]},
+         "video_versions": [{"url": "https://cdn.example.com/5b.mp4"}]}
+      ],
+      "user": {"username": "natgeo"}
+    }
+  ],
+  "next_max_id": null,
+  "more_available": false,
+  "status": "ok"
+}

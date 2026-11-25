@@ -1,0 +1,61 @@
+{
+  "data": {
+    "user": {
+      "id": "787132",
+      "username": "natgeo",
+      "full_name": "National Geographic",
+      "biography": "Inspiring the explorer in everyone 🌎 #natgeo",
+      "bio_links": [{"title": "Shop", "url": "https://natgeo.com/shop", "link_type": "external"}],
+      "external_url": "https://natgeo.com/shop",
+      "edge_followed_by": {"count": 283000000},
+      "edge_follow": {"count": 150},
+      "is_private": false,
+      "is_verified": true,
+      "is_business_account": true,
+      "is_professional_account": true,
+      "category_name": "Media/News Company",
+      "business_email": null,
+      "business_phone_number": null,
+      "pronouns": [],
+      "highlight_reel_count": 12,
+      "fbid": "17841400000000000",
+      "profile_pic_url": "https://cdn.example.com/pic_s.jpg",
+      "profile_pic_url_hd": "https://cdn.example.com/pic_hd.jpg",
+      "edge_owner_to_timeline_media": {
+        "count": 30000,
+        "page_info": {"has_next_page": true, "end_cursor": "QVFD"},
+        "edges": [
+          {"node": {
+            "__typename": "GraphImage", "id": "3001", "shortcode": "AAA111", "is_video": false,
+            "display_url": "https://cdn.example.com/1.jpg", "dimensions": {"height": 1350, "width": 1080},
+            "edge_media_to_caption": {"edges": [{"node": {"text": "Sunrise over the Alps #Mountains #travel with @explorer."}}]},
+            "edge_liked_by": {"count": 120000}, "edge_media_to_comment": {"count": 340},
+            "taken_at_timestamp": 1732000000, "location": {"id": "1", "name": "Swiss Alps"},
+            "owner": {"id": "787132", "username": "natgeo"}
+          }},
+          {"node": {
+            "__typename": "GraphVideo", "id": "3002", "shortcode": "BBB222", "is_video": true, "product_type": "clips",
+            "display_url": "https://cdn.example.com/2.jpg", "video_url": "https://cdn.example.com/2.mp4",
+            "video_view_count": 900000, "video_duration": 31.5, "dimensions": {"height": 1920, "width": 1080},
+            "edge_media_to_caption": {"edges": [{"node": {"text": "Whale song 🐋 #ocean"}}]},
+            "edge_liked_by": {"count": 0}, "edge_media_preview_like": {"count": 5}, "edge_media_to_comment": {"count": 12},
+            "taken_at_timestamp": 1731900000, "owner": {"id": "787132", "username": "natgeo"},
+            "clips_music_attribution_info": {"artist_name": "Blue Choir", "song_name": "Ocean Hymn"}
+          }},
+          {"node": {
+            "__typename": "GraphSidecar", "id": "3003", "shortcode": "CCC333", "is_video": false,
+            "display_url": "https://cdn.example.com/3.jpg", "dimensions": {"height": 1080, "width": 1080},
+            "edge_media_to_caption": {"edges": []}, "edge_liked_by": {"count": 800}, "edge_media_to_comment": {"count": 3},
+            "taken_at_timestamp": 1731800000,
+            "edge_sidecar_to_children": {"edges": [
+              {"node": {"display_url": "https://cdn.example.com/3a.jpg", "is_video": false}},
+              {"node": {"display_url": "https://cdn.example.com/3b.jpg", "is_video": true, "video_url": "https://cdn.example.com/3b.mp4"}}
+            ]},
+            "owner": {"id": "787132", "username": "natgeo"}
+          }}
+        ]
+      }
+    }
+  },
+  "status": "ok"
+}

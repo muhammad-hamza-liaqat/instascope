@@ -1,0 +1,23 @@
+{
+  "items": [
+    {"media": {
+      "pk": "3002", "id": "3002_787132", "code": "BBB222", "media_type": 2, "product_type": "clips",
+      "taken_at": 1731900000, "caption": {"text": "Whale song 🐋 #ocean"},
+      "like_count": 45000, "comment_count": 12, "play_count": 2500000, "view_count": 900000, "video_duration": 31.5,
+      "image_versions2": {"candidates": [{"url": "https://cdn.example.com/2.jpg", "width": 1080, "height": 1920}]},
+      "video_versions": [{"url": "https://cdn.example.com/2.mp4", "width": 720, "height": 1280}],
+      "original_width": 1080, "original_height": 1920, "user": {"username": "natgeo"},
+      "clips_metadata": {"music_info": {"music_asset_info": {"title": "Ocean Hymn", "display_artist": "Blue Choir"}}}
+    }},
+    {"media": {
+      "pk": "3010", "id": "3010_787132", "code": "DDD444", "media_type": 2, "product_type": "clips",
+      "taken_at": 1731700000, "caption": null,
+      "like_count": 1000, "comment_count": 4, "play_count": 30000, "video_duration": 12.0,
+      "image_versions2": {"candidates": [{"url": "https://cdn.example.com/4.jpg"}]},
+      "video_versions": [{"url": "https://cdn.example.com/4.mp4"}], "user": {"username": "natgeo"},
+      "clips_metadata": {"original_sound_info": {"original_audio_title": "Original audio"}}
+    }}
+  ],
+  "paging_info": {"max_id": "NEXT", "more_available": false},
+  "status": "ok"
+}
