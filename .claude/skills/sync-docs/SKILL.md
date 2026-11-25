@@ -15,7 +15,7 @@ Go through each item; edit only what the change actually affected.
       update `project-instascope.md` with decisions, status and open issues, with absolute dates.
       Record new user preferences as `feedback`/`user` memories and keep `MEMORY.md` indexed.
       Then run `make memory-sync` to copy memory into the repo (`.claude/memory/`). No secrets.
-- [ ] **README.md**: endpoint table, feature list, session/proxy table.
+- [ ] **README.md + docs/**: the README is a short index (author: Hamza). User docs live in `docs/01-purpose.md` … `docs/07-developers.md`, written in simple beginner words. Update the matching section file.
 - [ ] **.env.example**: every field in `app/core/config.py::Settings` appears here with a comment.
 - [ ] `make check` passes.
 

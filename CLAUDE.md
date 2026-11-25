@@ -67,7 +67,7 @@ After **every** change that adds or alters behaviour, endpoints, settings or str
 1. Update this file (architecture table, strategy, conventions).
 2. Update the affected skill(s) in `.claude/skills/`, or add one for a new repeatable workflow.
 3. Update project memory (`~/.claude/projects/-Users-muhammad-hamza-Desktop-untitled-folder/memory/`), then run `make memory-sync` so the repo copy in `.claude/memory/` matches (user rule, 2026-11-25).
-4. Update `README.md` and `.env.example` when user-facing.
+4. Update the matching `docs/0N-*.md` section (simple beginner words), `README.md` (short index, author: Hamza) and `.env.example` when user-facing.
 
 The `sync-docs` skill has the checklist. The Stop hook `.claude/hooks/docs_sync_check.py` reminds
 you once whenever code is newer than these docs.
