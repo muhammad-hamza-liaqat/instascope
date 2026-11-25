@@ -48,6 +48,7 @@ separate posts/reels/history/list/jobs endpoints; add fields or query params to 
 - Account-level failures during a logged-in call (`RateLimited`, `LoginRequired`, `Blocked`) are retried immediately with a different account; the pool updates the failing one (cooling / needs_login / checkpoint).
 - Login: `GET /data/shared_data/` (csrf + `encryption.key_id/public_key/version`, or the `ig-set-password-encryption-web-*` headers) → `POST /api/v1/web/accounts/login/ajax/`. Checkpoints and 2FA are **never bypassed**: flag, alert, re-try every `ACCOUNT_CHECKPOINT_RETRY_SECONDS`.
 - An HTML 404 on an API URL means a block (not "user missing"); a JSON 404 means the profile is not found.
+- **Live finding 2026-11-25:** logged-out `web_profile_info` returned an **HTML 404** from the user's Mac (home connection) and from the sandbox, so logged-out access is gated. Pool accounts are effectively required; the logged-in path (and login itself) is still unverified.
 - Status: as of 2026-11-25 these endpoints, **including login**, are **not verified against live Instagram** (sandbox couldn't reach it). First live run: check them and update fixtures if formats differ.
 
 ## Conventions

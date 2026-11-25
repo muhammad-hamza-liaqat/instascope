@@ -250,8 +250,10 @@ class InstagramClient:
             if is_json:
                 raise ProfileNotFound(status=404)
             raise Blocked(
-                "Instagram answered an API call with an HTML 404 — logged-out access from this "
-                "IP is refused. Configure IG_ACCOUNTS and/or PROXY_URL.",
+                "Instagram refused this logged-out request (it answered with an HTML 404 "
+                "page). Logged-out access is often blocked: add a spare account to "
+                "IG_ACCOUNTS or IG_ACCOUNTS_FILE so InstaScope can retry logged in, and use a "
+                "residential PROXY_URL for volume.",
                 status=404,
             )
         if status in (401, 403) or any(marker in blob for marker in _LOGIN_MARKERS):
