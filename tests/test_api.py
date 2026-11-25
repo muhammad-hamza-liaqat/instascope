@@ -27,6 +27,11 @@ def test_limits_zero_skip_sections_and_cache_tracks_them(client, ig):
     assert profile_route.call_count == 2
 
 
+def test_root_redirects_to_docs(client):
+    resp = client.get("/", follow_redirects=False)
+    assert resp.status_code == 307 and resp.headers["location"] == "/docs"
+
+
 def test_health(client):
     assert client.get("/health").json()["status"] == "ok"
     ready = client.get("/health/ready").json()

@@ -13,7 +13,7 @@ CDN links expire).
 ```bash
 cp .env.example .env      # optional: add IG_ACCOUNTS / PROXY_URL / API_KEYS
 make install              # uv sync
-make dev                  # http://localhost:8000/docs
+make dev                  # http://localhost:8000 (redirects to /docs)
 ```
 
 Docker: `make docker`. Data is kept in `./storage`.

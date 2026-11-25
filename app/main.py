@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -120,6 +121,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request_id,
         )
         return response
+
+    @app.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        return RedirectResponse("/docs")
 
     register_exception_handlers(app)
     app.include_router(health_router)
